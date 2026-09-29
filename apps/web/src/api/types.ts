@@ -197,3 +197,59 @@ export interface ProductSalesTrend {
   granularity: Granularity
   points: ProductTrendPoint[]
 }
+
+// ---- Sales (apps/api sale.dto) ----
+
+export type SaleSort = 'newest' | 'oldest' | 'largest'
+
+export interface SaleListItem {
+  saleId: number
+  receiptNumber: string
+  soldAt: string
+  storeId: number
+  storeCode: string
+  storeName: string
+  /** Distinct products on the receipt. */
+  lineCount: number
+  /** Total quantity across all lines. */
+  unitCount: number
+  total: number
+}
+
+export interface SaleListResponse {
+  period: DateRange
+  storeId: number | null
+  query: string | null
+  /** Present when the list is filtered to receipts containing a product. */
+  product: { id: number; sku: string; name: string } | null
+  sort: SaleSort
+  page: number
+  size: number
+  totalItems: number
+  totalPages: number
+  items: SaleListItem[]
+}
+
+export interface SaleLine {
+  productId: number
+  sku: string
+  name: string
+  category: string
+  quantity: number
+  /** Price charged at the time of sale. */
+  unitPrice: number
+  lineTotal: number
+  /** Today's list price, for comparison only. */
+  currentListPrice: number
+}
+
+export interface SaleDetail {
+  saleId: number
+  receiptNumber: string
+  soldAt: string
+  store: { id: number; code: string; name: string; city: string | null }
+  lineCount: number
+  unitCount: number
+  total: number
+  lines: SaleLine[]
+}

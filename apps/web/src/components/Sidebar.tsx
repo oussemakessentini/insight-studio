@@ -2,7 +2,7 @@ import type { ComponentType, SVGProps } from 'react'
 import { CloseIcon, DashboardIcon, LogoMark, ReceiptIcon, ReportIcon, StoreIcon, TagIcon } from './Icons'
 import { Link } from './Link'
 
-export type Section = 'dashboard' | 'products'
+export type Section = 'dashboard' | 'products' | 'sales'
 
 interface NavItem {
   label: string
@@ -14,7 +14,7 @@ interface NavItem {
 const NAV: NavItem[] = [
   { label: 'Dashboard', icon: DashboardIcon, section: 'dashboard' },
   { label: 'Products', icon: TagIcon, section: 'products' },
-  { label: 'Sales', icon: ReceiptIcon },
+  { label: 'Sales', icon: ReceiptIcon, section: 'sales' },
   { label: 'Stores', icon: StoreIcon },
   { label: 'Reports', icon: ReportIcon },
 ]

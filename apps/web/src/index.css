@@ -992,6 +992,90 @@ a.button {
   display: none;
 }
 
+/* ---------- Sales ------------------------------------------------------- */
+
+.mono-title {
+  font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
+  font-size: 0.85em;
+  letter-spacing: 0;
+}
+
+.filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: -4px 0 14px;
+}
+
+.filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 4px 4px 12px;
+  border-radius: 999px;
+  background: var(--blue-50);
+  border: 1px solid var(--blue-100);
+  color: var(--navy-800);
+  font-size: 13px;
+}
+
+.filter-chip a {
+  color: var(--blue-600);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.filter-chip a:hover {
+  text-decoration: underline;
+}
+
+.filter-chip-remove {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--navy-700);
+  cursor: pointer;
+}
+
+.filter-chip-remove:hover {
+  background: var(--blue-100);
+}
+
+.data-table tfoot th,
+.data-table tfoot td {
+  padding: 12px 10px 0;
+  border-top: 1px solid var(--border-strong);
+  border-bottom: 0;
+  font-weight: 700;
+  color: var(--navy-900);
+  text-align: left;
+}
+
+.data-table tfoot .num {
+  text-align: right;
+}
+
+.data-table tfoot th:first-child {
+  padding-left: 0;
+}
+
+.data-table tfoot td:last-child {
+  padding-right: 0;
+}
+
+.show-sm-cell {
+  display: none;
+}
+
+/* Receipt numbers (BOS-20260831-012) should never break at their hyphens. */
+.data-table a.mono {
+  white-space: nowrap;
+}
+
 /* ---------- Responsive --------------------------------------------------- */
 
 @media (max-width: 1200px) {
@@ -1121,6 +1205,10 @@ a.button {
 
   .show-sm-inline {
     display: inline;
+  }
+
+  .data-table .show-sm-cell {
+    display: table-cell;
   }
 
   .toolbar > .field {

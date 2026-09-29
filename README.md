@@ -2,8 +2,9 @@
 
 A retail analytics dashboard for a multi-store clothing business. A Spring Boot API computes
 sales metrics from PostgreSQL; a React app presents revenue trends, store performance, top
-products and recent sales, plus a searchable product catalogue with per-product sales history.
-Date-range and store filters apply across every page.
+products and recent sales, plus a searchable product catalogue with per-product sales history
+and a sales register with receipt-level detail. Date-range and store filters apply across every
+page.
 
 The bundled demo business, **Fieldstone Apparel Co.**, and all of its stores, products and sales
 are fictional.
@@ -42,7 +43,7 @@ a product's list price changes. Days, weeks and months are bucketed in the busin
 - Schema is owned by Flyway; Hibernate runs with `ddl-auto=validate`.
 - Reporting queries use `NamedParameterJdbcTemplate`: each endpoint runs one aggregate SQL query
   per result (no N+1), scoped to the business, a half-open time window and an optional store.
-- The `reporting` package holds what the dashboard and product endpoints share: business
+- The `reporting` package holds what the dashboard, product and sales endpoints share: business
   resolution, date/store filter defaults and validation, SQL filter fragments and bucket math, so
   filters behave identically everywhere.
 - User input never reaches SQL text: sort columns and date buckets come from enums, and search
@@ -57,8 +58,8 @@ a product's list price changes. Days, weeks and months are bucketed in the busin
   components, React 19 support) and handles responsive sizing, tooltips and axis ticks, which are
   the fiddly parts of hand-built SVG. Sales by store is plain HTML/CSS bars.
 - Each panel loads independently with skeleton, empty and error states.
-- A small History API router (no routing dependency) serves `/`, `/products` and
-  `/products/{id}`. The store and date filters are shared by all pages and kept in the URL, along
+- A small History API router (no routing dependency) serves `/`, `/products`,
+  `/products/{id}`, `/sales` and `/sales/{id}`. The store and date filters are shared by all pages and kept in the URL, along
   with page-specific state such as search, sort and page number, so views can be bookmarked and
   the back button restores them. Deep links work with the Vite dev and preview servers, which fall
   back to `index.html`; a static host needs the same fallback configured.
@@ -67,9 +68,18 @@ a product's list price changes. Days, weeks and months are bucketed in the busin
 
 | Path | Shows |
 |---|---|
-| `/` | Dashboard: metric cards, revenue over time, sales by store, top products, recent sales. Top-product rows open the product page |
+| `/` | Dashboard: metric cards, revenue over time, sales by store, top products, recent sales. Top-product rows open the product page; recent-sale rows open the receipt |
 | `/products` | Catalogue: every product with current price, average price actually charged, units, orders and revenue for the period. Search by name or SKU, filter by category, sort, 20 per page |
-| `/products/{id}` | Product: period metrics vs the previous period, sales trend at the prices charged, and each distinct price the product sold at, compared with today's list price |
+| `/products/{id}` | Product: period metrics vs the previous period, sales trend at the prices charged, and each distinct price the product sold at, compared with today's list price. Links to the receipts containing the product |
+| `/sales` | Sales register: every receipt in the period with local date and time, store, items, units and total. Search by receipt number, filter to receipts containing a product, sort newest, oldest or largest, 25 per page |
+| `/sales/{id}` | Receipt: date and time, store, and each line's product, quantity, unit price charged (compared with today's list price) and line total |
+
+**Orders, items and units:** an *order* is a receipt with at least one line item. The schema
+allows a receipt without items, but it has no revenue or units, so it is left out of every list,
+count, average and date range; the Sales list count therefore always equals the dashboard's order
+count for the same filters. Such a receipt can still be opened at `/sales/{id}`, which says it is
+not counted. *Items* are the distinct products on a receipt (line items); *units* are the total
+quantity. The schema records no customer, payment or discount data, so none is shown.
 
 ## Requirements
 
@@ -163,7 +173,7 @@ Ranges may span at most 1,098 days. `from` must not be after `to`. An unknown st
 | `/api/dashboard/revenue?granularity=day\|week\|month` | Revenue and orders per bucket, zero-filled; partial edge buckets are flagged. Granularity is chosen from the range length if omitted |
 | `/api/dashboard/sales-by-store` | Revenue, orders, units and revenue share per store (stores without sales included) |
 | `/api/dashboard/top-products?limit=5` | Best sellers by revenue with units and average price charged (`limit` 1–50) |
-| `/api/dashboard/recent-sales?limit=10` | Latest receipts with store, item count and total (`limit` 1–50) |
+| `/api/dashboard/recent-sales?limit=10` | Latest receipts with store, units and total (`limit` 1–50). The `itemCount` field holds units (total quantity); the name predates the sales API |
 | `/api/products` | One page of the catalogue with sales performance for the period; products without sales are included (see below) |
 | `/api/products/categories` | Distinct product categories, for the category filter |
 | `/api/products/{id}` | Product details; revenue, units, orders and average selling price vs the previous period; price history (each unit price charged, with first/last date, units and orders) |
@@ -183,6 +193,27 @@ Ranges may span at most 1,098 days. `from` must not be after `to`. An unknown st
 The response includes `totalItems` and `totalPages`. A page past the end returns an empty
 `items` list. `averageSellingPrice` is `null` when a product sold nothing in the period. Products
 of other businesses return `404`.
+
+| Sales endpoint | Returns |
+|---|---|
+| `/api/sales` | One page of orders (receipts with at least one item) in the period, with `lineCount` (items), `unitCount` and `total` at the prices charged |
+| `/api/sales/{id}` | One receipt: store, `soldAt`, and lines with `quantity`, `unitPrice` (charged), `lineTotal` and `currentListPrice` (today's, for comparison) |
+
+`/api/sales` also accepts:
+
+| Parameter | Format | Default |
+|---|---|---|
+| `q` | text, up to 40 characters; case-insensitive match within the receipt number (`%` and `_` match literally) | none |
+| `productId` | only receipts containing this product; totals still cover the whole receipt | all |
+| `sort` | `newest`, `oldest` or `largest` (total) | `newest` |
+| `page` | zero-based page number, 0–10,000 | `0` |
+| `size` | page size, 1–100 | `25` |
+
+The list contains orders only (receipts with at least one line item), so `totalItems` equals
+`orders` from `/api/dashboard/summary` for the same filters and the listed totals add up to its
+revenue. `/api/sales/{id}` also returns receipts without items, with empty `lines`. The sale
+detail is not limited by the date or store filters. Sales, and products used as filters,
+belonging to other businesses return `404`.
 
 Example error:
 
@@ -209,12 +240,16 @@ running. They do not touch your local database. The tests cover:
   historical prices, store filters, partial buckets and cross-business isolation
 - product API: search (including literal wildcards), category and store filters, sorting,
   paging, price history, trends, and products of other businesses
+- sales API: local-date windows, store and product filters, receipt search, sorting, paging,
+  line totals at historical prices, and sales of other businesses
+- the order definition: receipts without items are excluded from the Sales list, dashboard
+  store counts and the data range, and the Sales list count and totals match the dashboard
 - validation and error responses
 - the demo seeder
 
 ## Future features
 
-- Sales and Stores pages with drill-down from the dashboard
+- Stores page with drill-down from the dashboard
 - Per-store breakdown on the product page
 - Category breakdown and product mix over time
 - CSV import of sales data

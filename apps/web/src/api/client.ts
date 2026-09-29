@@ -6,6 +6,9 @@ import type {
   ProductListResponse,
   ProductSalesTrend,
   ProductSort,
+  SaleDetail,
+  SaleListResponse,
+  SaleSort,
   SortDirection,
   RecentSalesResponse,
   RevenueSeries,
@@ -107,4 +110,19 @@ export const productsApi = {
 
   salesTrend: (productId: number, f: DashboardFilter, granularity: Granularity | null, signal?: AbortSignal) =>
     getJson<ProductSalesTrend>(`/api/products/${productId}/sales-trend`, { ...f, granularity }, signal),
+}
+
+export interface SaleListQuery {
+  q: string
+  productId: number | null
+  sort: SaleSort
+  page: number
+  size: number
+}
+
+export const salesApi = {
+  list: (f: DashboardFilter, query: SaleListQuery, signal?: AbortSignal) =>
+    getJson<SaleListResponse>('/api/sales', { ...f, ...query }, signal),
+
+  detail: (saleId: number, signal?: AbortSignal) => getJson<SaleDetail>(`/api/sales/${saleId}`, {}, signal),
 }

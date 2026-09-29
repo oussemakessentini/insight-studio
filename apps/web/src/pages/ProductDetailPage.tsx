@@ -85,7 +85,15 @@ export function ProductDetailPage({ productId, context, filters, onFiltersChange
           details={trendDetails}
           emptyMessage="This product had no sales in this period."
         />
-        <Panel title="Prices charged" subtitle="Each price this product sold at in the period">
+        <Panel
+          title="Prices charged"
+          subtitle="Each price this product sold at in the period"
+          actions={
+            <Link className="panel-link" href={href(`/sales?product=${productId}`)}>
+              View receipts
+            </Link>
+          }
+        >
           <AsyncContent
             {...detail}
             isEmpty={(d) => d.priceHistory.length === 0}

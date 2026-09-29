@@ -1,11 +1,13 @@
 import { useSyncExternalStore } from 'react'
 
-// A minimal History API router: three routes don't justify a routing dependency.
+// A minimal History API router: a handful of routes doesn't justify a routing dependency.
 
 export type Route =
   | { name: 'dashboard' }
   | { name: 'products' }
   | { name: 'product'; productId: number }
+  | { name: 'sales' }
+  | { name: 'sale'; saleId: number }
   | { name: 'notFound' }
 
 const NAVIGATE_EVENT = 'app:navigate'
@@ -50,6 +52,9 @@ export function matchRoute(pathname: string): Route {
   if (path === '/products') return { name: 'products' }
   const product = /^\/products\/(\d+)$/.exec(path)
   if (product) return { name: 'product', productId: Number(product[1]) }
+  if (path === '/sales') return { name: 'sales' }
+  const sale = /^\/sales\/(\d+)$/.exec(path)
+  if (sale) return { name: 'sale', saleId: Number(sale[1]) }
   return { name: 'notFound' }
 }
 

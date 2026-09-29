@@ -69,10 +69,12 @@ export function filterQuery(filters: Filters): Record<string, string | null> {
 
 /** A link to `path` that carries the current filters, so it also works when opened in a new tab. */
 export function withFilters(path: string, filters: Filters): string {
-  const params = new URLSearchParams()
+  // `path` may already carry page parameters, e.g. /sales?product=5.
+  const [pathname, existing = ''] = path.split('?', 2)
+  const params = new URLSearchParams(existing)
   for (const [key, value] of Object.entries(filterQuery(filters))) {
     if (value !== null) params.set(key, value)
   }
   const query = params.toString()
-  return query ? `${path}?${query}` : path
+  return query ? `${pathname}?${query}` : pathname
 }

@@ -73,7 +73,13 @@ export function DashboardPage({ context, filters, onFiltersChange, href }: PageP
           productHref={(id) => href(`/products/${id}`)}
           allProductsHref={href('/products')}
         />
-        <RecentSales state={recent} currency={business.currency} timeZone={business.timeZone} />
+        <RecentSales
+          state={recent}
+          currency={business.currency}
+          timeZone={business.timeZone}
+          saleHref={(id) => href(`/sales/${id}`)}
+          allSalesHref={href('/sales')}
+        />
       </div>
     </>
   )

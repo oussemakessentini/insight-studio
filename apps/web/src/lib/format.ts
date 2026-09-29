@@ -106,3 +106,24 @@ export function formatDateTime(instant: string, timeZone: string): string {
   }
   return formatter.format(new Date(instant))
 }
+
+const longDateTimeFormatters = new Map<string, Intl.DateTimeFormat>()
+
+/** "Mon, Aug 31, 2026, 7:34 PM EDT" in the business's time zone. */
+export function formatDateTimeLong(instant: string, timeZone: string): string {
+  let formatter = longDateTimeFormatters.get(timeZone)
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat(locale, {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      timeZoneName: 'short',
+      timeZone,
+    })
+    longDateTimeFormatters.set(timeZone, formatter)
+  }
+  return formatter.format(new Date(instant))
+}

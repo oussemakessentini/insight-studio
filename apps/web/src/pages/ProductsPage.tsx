@@ -4,9 +4,11 @@ import type { ProductListItem, ProductListResponse, ProductSort, SortDirection }
 import { FilterBar } from '../components/FilterBar'
 import { Link } from '../components/Link'
 import { PageHeader } from '../components/PageHeader'
+import { Pagination, PastLastPage } from '../components/Pagination'
 import { AsyncContent, EmptyState, Panel, SkeletonRows } from '../components/Panel'
 import { PriceComparison } from '../components/PriceComparison'
 import { useApi } from '../hooks/useApi'
+import { useDebounced } from '../hooks/useDebounced'
 import { useStateResetOn } from '../hooks/useStateResetOn'
 import { formatCurrency, formatDateRange, formatNumber } from '../lib/format'
 import { updateQuery } from '../lib/router'
@@ -44,18 +46,13 @@ export function ProductsPage({ context, filters, onFiltersChange, href }: PagePr
   const { business, stores, dataRange } = context
   const [initial] = useState(initialStateFromUrl)
   const [searchInput, setSearchInput] = useState(initial.q)
-  const [search, setSearch] = useState(initial.q.trim())
+  const search = useDebounced(searchInput, SEARCH_DEBOUNCE_MS).trim()
   const [category, setCategory] = useState(initial.category)
   const [sort, setSort] = useState<SortOption>(initial.sort)
 
   // Any change to what is being listed starts again from the first page.
   const listKey = `${filterKey(filters)}|${search}|${category}|${sort}`
   const [page, setPage] = useStateResetOn(listKey, 0, initial.page)
-
-  useEffect(() => {
-    const timer = setTimeout(() => setSearch(searchInput.trim()), SEARCH_DEBOUNCE_MS)
-    return () => clearTimeout(timer)
-  }, [searchInput])
 
   useEffect(() => {
     updateQuery({
@@ -80,7 +77,6 @@ export function ProductsPage({ context, filters, onFiltersChange, href }: PagePr
   const hasCriteria = Boolean(search || category)
   const clearCriteria = () => {
     setSearchInput('')
-    setSearch('')
     setCategory('')
   }
 
@@ -143,11 +139,11 @@ export function ProductsPage({ context, filters, onFiltersChange, href }: PagePr
             data.totalItems === 0 ? (
               <NoResults search={search} category={category} onClear={hasCriteria ? clearCriteria : undefined} />
             ) : data.items.length === 0 ? (
-              <PastLastPage data={data} onPage={setPage} />
+              <PastLastPage info={data} onPage={setPage} />
             ) : (
               <>
                 <ProductTable data={data} currency={business.currency} productHref={(id) => href(`/products/${id}`)} />
-                <Pagination data={data} onPage={setPage} />
+                <Pagination info={data} count={data.items.length} onPage={setPage} />
               </>
             )
           }
@@ -221,55 +217,6 @@ function ProductRow({ product: p, currency, href }: { product: ProductListItem; 
       <td className="num hide-md">{formatNumber(p.orders)}</td>
       <td className="num strong">{noSales ? <span className="text-muted">No sales</span> : formatCurrency(p.revenue, currency)}</td>
     </tr>
-  )
-}
-
-function Pagination({ data, onPage }: { data: ProductListResponse; onPage: (page: number) => void }) {
-  const first = data.page * data.size + 1
-  const last = first + data.items.length - 1
-  return (
-    <nav className="pagination" aria-label="Pagination">
-      <p className="pagination-summary">
-        Showing {formatNumber(first)}–{formatNumber(last)} of {formatNumber(data.totalItems)}
-      </p>
-      {data.totalPages > 1 && (
-        <div className="pagination-controls">
-          <button
-            type="button"
-            className="button button-secondary"
-            disabled={data.page === 0}
-            onClick={() => onPage(data.page - 1)}
-          >
-            Previous
-          </button>
-          <span className="pagination-page">
-            Page {data.page + 1} of {data.totalPages}
-          </span>
-          <button
-            type="button"
-            className="button button-secondary"
-            disabled={data.page >= data.totalPages - 1}
-            onClick={() => onPage(data.page + 1)}
-          >
-            Next
-          </button>
-        </div>
-      )}
-    </nav>
-  )
-}
-
-/** A page number past the end, e.g. from an old bookmark after the catalogue shrank. */
-function PastLastPage({ data, onPage }: { data: ProductListResponse; onPage: (page: number) => void }) {
-  return (
-    <div className="empty-with-action">
-      <EmptyState
-        message={`Page ${formatNumber(data.page + 1)} is past the end of the results (${formatNumber(data.totalPages)} ${data.totalPages === 1 ? 'page' : 'pages'}).`}
-      />
-      <button type="button" className="button button-secondary" onClick={() => onPage(data.totalPages - 1)}>
-        Go to the last page
-      </button>
-    </div>
   )
 }
 

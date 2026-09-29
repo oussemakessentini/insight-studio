@@ -12,6 +12,8 @@ import { matchRoute, updateQuery, useHistoryVersion, usePathname, type Route } f
 import { DashboardPage } from './pages/DashboardPage'
 import { ProductDetailPage } from './pages/ProductDetailPage'
 import { ProductsPage } from './pages/ProductsPage'
+import { SaleDetailPage } from './pages/SaleDetailPage'
+import { SalesPage } from './pages/SalesPage'
 import type { PageProps } from './pages/types'
 
 function App() {
@@ -22,7 +24,7 @@ function App() {
     return <Workspace context={context.data} route={route} />
   }
   return (
-    <Shell active={sectionOf(route)} hrefs={{ dashboard: '/', products: '/products' }}>
+    <Shell active={sectionOf(route)} hrefs={{ dashboard: '/', products: '/products', sales: '/sales' }}>
       {context.error ? (
         <div className="panel page-error">
           <h1 className="page-title">Insight Studio is unavailable</h1>
@@ -63,13 +65,15 @@ function Workspace({ context, route }: { context: DashboardContext; route: Route
   return (
     <Shell
       active={sectionOf(route)}
-      hrefs={{ dashboard: href('/'), products: href('/products') }}
+      hrefs={{ dashboard: href('/'), products: href('/products'), sales: href('/sales') }}
       businessName={context.business.name}
     >
       {route.name === 'dashboard' && <DashboardPage {...pageProps} />}
       {route.name === 'products' && <ProductsPage {...pageProps} />}
       {/* Keyed so switching products starts from a clean state. */}
       {route.name === 'product' && <ProductDetailPage key={route.productId} productId={route.productId} {...pageProps} />}
+      {route.name === 'sales' && <SalesPage {...pageProps} />}
+      {route.name === 'sale' && <SaleDetailPage key={route.saleId} saleId={route.saleId} {...pageProps} />}
       {route.name === 'notFound' && <NotFound homeHref={href('/')} />}
     </Shell>
   )
@@ -85,6 +89,7 @@ function fromUrl(context: DashboardContext): Filters {
 function sectionOf(route: Route): Section | null {
   if (route.name === 'dashboard') return 'dashboard'
   if (route.name === 'products' || route.name === 'product') return 'products'
+  if (route.name === 'sales' || route.name === 'sale') return 'sales'
   return null
 }
 
