@@ -1,10 +1,12 @@
 package com.oussamaksantini.insightstudio.dashboard;
 
 import com.oussamaksantini.insightstudio.business.Business;
+import com.oussamaksantini.insightstudio.common.ImportsProperties;
 import com.oussamaksantini.insightstudio.dashboard.DashboardQueries.RevenueBucket;
 import com.oussamaksantini.insightstudio.dashboard.DashboardQueries.Totals;
 import com.oussamaksantini.insightstudio.dashboard.dto.DashboardContextResponse;
 import com.oussamaksantini.insightstudio.dashboard.dto.DashboardContextResponse.BusinessInfo;
+import com.oussamaksantini.insightstudio.dashboard.dto.DashboardContextResponse.Features;
 import com.oussamaksantini.insightstudio.dashboard.dto.RecentSalesResponse;
 import com.oussamaksantini.insightstudio.dashboard.dto.RevenueSeriesResponse;
 import com.oussamaksantini.insightstudio.dashboard.dto.RevenueSeriesResponse.Point;
@@ -35,11 +37,14 @@ public class DashboardService {
     private final ReportingContext reporting;
     private final StoreRepository stores;
     private final DashboardQueries queries;
+    private final ImportsProperties imports;
 
-    DashboardService(ReportingContext reporting, StoreRepository stores, DashboardQueries queries) {
+    DashboardService(
+            ReportingContext reporting, StoreRepository stores, DashboardQueries queries, ImportsProperties imports) {
         this.reporting = reporting;
         this.stores = stores;
         this.queries = queries;
+        this.imports = imports;
     }
 
     public DashboardContextResponse context() {
@@ -50,7 +55,8 @@ public class DashboardService {
         return new DashboardContextResponse(
                 new BusinessInfo(business.getName(), business.getSlug(), business.getCurrency(), business.getTimeZone()),
                 storeOptions,
-                reporting.saleDateRange(business.getId(), business.zoneId()));
+                reporting.saleDateRange(business.getId(), business.zoneId()),
+                new Features(imports.enabled()));
     }
 
     public SummaryResponse summary(LocalDate from, LocalDate to, Long storeId) {

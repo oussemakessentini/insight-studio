@@ -8,6 +8,11 @@ export type Route =
   | { name: 'product'; productId: number }
   | { name: 'sales' }
   | { name: 'sale'; saleId: number }
+  | { name: 'stores' }
+  | { name: 'store'; storeId: number }
+  | { name: 'reports' }
+  | { name: 'imports' }
+  | { name: 'import'; importId: number }
   | { name: 'notFound' }
 
 const NAVIGATE_EVENT = 'app:navigate'
@@ -55,6 +60,13 @@ export function matchRoute(pathname: string): Route {
   if (path === '/sales') return { name: 'sales' }
   const sale = /^\/sales\/(\d+)$/.exec(path)
   if (sale) return { name: 'sale', saleId: Number(sale[1]) }
+  if (path === '/stores') return { name: 'stores' }
+  const store = /^\/stores\/(\d+)$/.exec(path)
+  if (store) return { name: 'store', storeId: Number(store[1]) }
+  if (path === '/reports') return { name: 'reports' }
+  if (path === '/imports') return { name: 'imports' }
+  const batch = /^\/imports\/(\d+)$/.exec(path)
+  if (batch) return { name: 'import', importId: Number(batch[1]) }
   return { name: 'notFound' }
 }
 

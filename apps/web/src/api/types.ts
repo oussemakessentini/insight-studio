@@ -22,6 +22,8 @@ export interface DashboardContext {
   }
   stores: StoreOption[]
   dataRange: DateRange | null
+  /** Optional features enabled on this API; imports are off unless the local profile is active. */
+  features: { importsEnabled: boolean }
 }
 
 export interface MetricValue {

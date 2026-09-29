@@ -10,10 +10,15 @@ import { filterQuery, filtersFromUrl, withFilters, type Filters } from './lib/fi
 import { useStateResetOn } from './hooks/useStateResetOn'
 import { matchRoute, updateQuery, useHistoryVersion, usePathname, type Route } from './lib/router'
 import { DashboardPage } from './pages/DashboardPage'
+import { ImportDetailPage } from './pages/ImportDetailPage'
+import { ImportsPage } from './pages/ImportsPage'
 import { ProductDetailPage } from './pages/ProductDetailPage'
 import { ProductsPage } from './pages/ProductsPage'
+import { ReportsPage } from './pages/ReportsPage'
 import { SaleDetailPage } from './pages/SaleDetailPage'
 import { SalesPage } from './pages/SalesPage'
+import { StoreDetailPage } from './pages/StoreDetailPage'
+import { StoresPage } from './pages/StoresPage'
 import type { PageProps } from './pages/types'
 
 function App() {
@@ -24,7 +29,7 @@ function App() {
     return <Workspace context={context.data} route={route} />
   }
   return (
-    <Shell active={sectionOf(route)} hrefs={{ dashboard: '/', products: '/products', sales: '/sales' }}>
+    <Shell active={sectionOf(route)} hrefs={sectionHrefs((path) => path)} importsEnabled={false}>
       {context.error ? (
         <div className="panel page-error">
           <h1 className="page-title">Insight Studio is unavailable</h1>
@@ -65,7 +70,8 @@ function Workspace({ context, route }: { context: DashboardContext; route: Route
   return (
     <Shell
       active={sectionOf(route)}
-      hrefs={{ dashboard: href('/'), products: href('/products'), sales: href('/sales') }}
+      hrefs={sectionHrefs(href)}
+      importsEnabled={context.features.importsEnabled}
       businessName={context.business.name}
     >
       {route.name === 'dashboard' && <DashboardPage {...pageProps} />}
@@ -74,6 +80,17 @@ function Workspace({ context, route }: { context: DashboardContext; route: Route
       {route.name === 'product' && <ProductDetailPage key={route.productId} productId={route.productId} {...pageProps} />}
       {route.name === 'sales' && <SalesPage {...pageProps} />}
       {route.name === 'sale' && <SaleDetailPage key={route.saleId} saleId={route.saleId} {...pageProps} />}
+      {route.name === 'stores' && <StoresPage {...pageProps} />}
+      {route.name === 'store' && <StoreDetailPage key={route.storeId} storeId={route.storeId} {...pageProps} />}
+      {route.name === 'reports' && <ReportsPage {...pageProps} />}
+      {/* Import pages exist only when the API has imports enabled (local development). */}
+      {(route.name === 'imports' || route.name === 'import') && !context.features.importsEnabled && (
+        <ImportsDisabled homeHref={href('/')} />
+      )}
+      {route.name === 'imports' && context.features.importsEnabled && <ImportsPage {...pageProps} />}
+      {route.name === 'import' && context.features.importsEnabled && (
+        <ImportDetailPage key={route.importId} importId={route.importId} {...pageProps} />
+      )}
       {route.name === 'notFound' && <NotFound homeHref={href('/')} />}
     </Shell>
   )
@@ -90,17 +107,32 @@ function sectionOf(route: Route): Section | null {
   if (route.name === 'dashboard') return 'dashboard'
   if (route.name === 'products' || route.name === 'product') return 'products'
   if (route.name === 'sales' || route.name === 'sale') return 'sales'
+  if (route.name === 'stores' || route.name === 'store') return 'stores'
+  if (route.name === 'reports') return 'reports'
+  if (route.name === 'imports' || route.name === 'import') return 'imports'
   return null
+}
+
+function sectionHrefs(href: (path: string) => string): Record<Section, string> {
+  return {
+    dashboard: href('/'),
+    products: href('/products'),
+    sales: href('/sales'),
+    stores: href('/stores'),
+    reports: href('/reports'),
+    imports: href('/imports'),
+  }
 }
 
 interface ShellProps {
   active: Section | null
   hrefs: Record<Section, string>
+  importsEnabled: boolean
   businessName?: string
   children: ReactNode
 }
 
-function Shell({ active, hrefs, businessName, children }: ShellProps) {
+function Shell({ active, hrefs, importsEnabled, businessName, children }: ShellProps) {
   const [menuOpen, setMenuOpen] = useState(false)
   return (
     <div className="app-shell">
@@ -108,6 +140,7 @@ function Shell({ active, hrefs, businessName, children }: ShellProps) {
         businessName={businessName}
         active={active}
         hrefs={hrefs}
+        importsEnabled={importsEnabled}
         open={menuOpen}
         onClose={() => setMenuOpen(false)}
       />
@@ -137,6 +170,20 @@ function NotFound({ homeHref }: { homeHref: string }) {
     <div className="panel page-error">
       <h1 className="page-title">Page not found</h1>
       <ErrorState message="There is nothing at this address." />
+      <p className="page-error-action">
+        <Link className="button button-secondary" href={homeHref}>
+          Go to the dashboard
+        </Link>
+      </p>
+    </div>
+  )
+}
+
+function ImportsDisabled({ homeHref }: { homeHref: string }) {
+  return (
+    <div className="panel page-error">
+      <h1 className="page-title">Imports are disabled</h1>
+      <ErrorState message="CSV import is only available in local development. Start the API with the 'local' profile to enable it." />
       <p className="page-error-action">
         <Link className="button button-secondary" href={homeHref}>
           Go to the dashboard

@@ -27,23 +27,42 @@ export class ApiError extends Error {
   }
 }
 
-type Params = Record<string, string | number | null | undefined>
+/** Query parameters; null, undefined and empty strings are omitted. */
+export type Params = Record<string, string | number | boolean | null | undefined>
 
-async function getJson<T>(path: string, params: Params = {}, signal?: AbortSignal): Promise<T> {
+const UNREACHABLE = 'Could not reach the API. Check that it is running on port 8080.'
+
+function withQuery(path: string, params: Params): string {
   const query = new URLSearchParams()
   for (const [key, value] of Object.entries(params)) {
     if (value !== null && value !== undefined && value !== '') {
       query.set(key, String(value))
     }
   }
-  const url = query.size > 0 ? `${path}?${query}` : path
+  return query.size > 0 ? `${path}?${query}` : path
+}
 
+/**
+ * GET a JSON resource. Errors become an {@link ApiError} carrying the problem-detail message.
+ * Feature API modules (api/<feature>.ts) build on this and {@link sendForm}.
+ */
+export function getJson<T>(path: string, params: Params = {}, signal?: AbortSignal): Promise<T> {
+  return request<T>(withQuery(path, params), { signal, headers: { Accept: 'application/json' } })
+}
+
+/** POST multipart form data (e.g. a file upload) and read a JSON response. */
+export function sendForm<T>(path: string, form: FormData, params: Params = {}, signal?: AbortSignal): Promise<T> {
+  // No Content-Type header: the browser sets the multipart boundary itself.
+  return request<T>(withQuery(path, params), { method: 'POST', body: form, signal, headers: { Accept: 'application/json' } })
+}
+
+async function request<T>(url: string, init: RequestInit): Promise<T> {
   let response: Response
   try {
-    response = await fetch(url, { signal, headers: { Accept: 'application/json' } })
+    response = await fetch(url, init)
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') throw error
-    throw new ApiError(0, 'Could not reach the API. Check that it is running on port 8080.')
+    throw new ApiError(0, UNREACHABLE)
   }
 
   if (!response.ok) {
@@ -54,7 +73,7 @@ async function getJson<T>(path: string, params: Params = {}, signal?: AbortSigna
     } catch {
       // Not a problem-detail body (e.g. the dev proxy could not connect); keep the generic message.
       if (response.status === 502 || response.status === 504) {
-        message = 'Could not reach the API. Check that it is running on port 8080.'
+        message = UNREACHABLE
       }
     }
     throw new ApiError(response.status, message)

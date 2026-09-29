@@ -247,13 +247,24 @@ running. They do not touch your local database. The tests cover:
 - validation and error responses
 - the demo seeder
 
-## Future features
+## Roadmap
 
-- Stores page with drill-down from the dashboard
+**In progress (first iterations, developed in parallel branches):**
+
+- Stores: per-store performance list and store detail pages
+- Reports: on-demand monthly and category reports with CSV export
+- CSV import of sales data, available only in local development (`local` profile)
+- Cube analytics service in `services/analytics` (semantic layer and pre-aggregations), reconciled
+  against the API but not yet used by the app
+
+**Later:**
+
+- Saved reports (named, reusable report definitions)
+- Cube integration in the API and dashboard (querying Cube instead of SQL, with access control)
+- Forecasting in `services/analytics`
 - Per-store breakdown on the product page
-- Category breakdown and product mix over time
-- CSV import of sales data
-- Authentication and multi-business (tenant) isolation
-- Semantic layer / pre-aggregation (e.g. Cube) and the `services/analytics` service for forecasting
-- Export of dashboard views (CSV/PDF)
+- Product mix over time
+- Authentication and multi-business (tenant) isolation; required before imports can be enabled
+  outside local development
+- Export of dashboard views (PDF)
 - Deployment (containerized API + static web build)

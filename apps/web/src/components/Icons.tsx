@@ -60,6 +60,13 @@ export const ReportIcon = (p: IconProps) => (
   </Icon>
 )
 
+export const UploadIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M12 16V4M7 9l5-5 5 5" />
+    <path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3" />
+  </Icon>
+)
+
 export const MenuIcon = (p: IconProps) => (
   <Icon {...p}>
     <path d="M4 6h16M4 12h16M4 18h16" />

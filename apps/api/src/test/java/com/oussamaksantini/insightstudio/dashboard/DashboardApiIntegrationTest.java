@@ -91,7 +91,8 @@ class DashboardApiIntegrationTest extends PostgresIntegrationTest {
                 .andExpect(jsonPath("$.stores[*].code", contains("A", "B", "C")))
                 .andExpect(jsonPath("$.stores[2].city", nullValue()))
                 .andExpect(jsonPath("$.dataRange.from").value("2026-05-31"))
-                .andExpect(jsonPath("$.dataRange.to").value("2026-06-10"));
+                .andExpect(jsonPath("$.dataRange.to").value("2026-06-10"))
+                .andExpect(jsonPath("$.features.importsEnabled").value(false));
     }
 
     @Test
