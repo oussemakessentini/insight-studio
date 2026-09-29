@@ -1,1 +1,184 @@
-# insight-studio
+# Insight Studio
+
+A retail analytics dashboard for a multi-store clothing business. A Spring Boot API computes
+sales metrics from PostgreSQL; a React dashboard presents revenue trends, store performance, top
+products and recent sales, with date-range and store filters.
+
+The bundled demo business, **Fieldstone Apparel Co.**, and all of its stores, products and sales
+are fictional.
+
+## Architecture
+
+```
+apps/
+  api/        Spring Boot 4 (Java 21) REST API — JPA, Flyway, PostgreSQL
+  web/        React 19 + TypeScript + Vite dashboard
+infra/        Docker Compose for local PostgreSQL 16
+services/
+  analytics/  reserved for a future analytics service
+docs/
+```
+
+```
+Browser ──> Vite dev server (:5173) ──/api proxy──> Spring Boot API (:8080) ──> PostgreSQL (:5435)
+```
+
+**Data model** (Flyway migrations in `apps/api/src/main/resources/db/migration`):
+
+| Table | Purpose |
+|---|---|
+| `businesses` | Name, slug, currency (ISO 4217), reporting time zone |
+| `stores` | Physical or online stores of a business; unique `(business_id, code)` |
+| `products` | Catalogue with SKU, category and **current** list price |
+| `sales` | One receipt: store, receipt number, `sold_at` timestamp |
+| `sale_items` | Product, quantity and the **unit price actually charged** |
+
+Revenue is always `SUM(quantity × sale_items.unit_price)`, so historical revenue is unaffected when
+a product's list price changes. Days, weeks and months are bucketed in the business's time zone.
+
+**Backend design**
+
+- Schema is owned by Flyway; Hibernate runs with `ddl-auto=validate`.
+- Dashboard queries use `NamedParameterJdbcTemplate`: each endpoint is one aggregate SQL query
+  (no N+1), scoped to the business, a half-open time window and an optional store.
+- Responses are Java records (DTOs); JPA entities are never serialized.
+- Errors are RFC 9457 problem details (`application/problem+json`) with a readable `detail`.
+
+**Frontend design**
+
+- Plain CSS with design tokens (navy, soft gray, restrained blue); no UI framework.
+- [Recharts](https://recharts.org) renders the revenue chart. It is React-native (declarative
+  components, React 19 support) and handles responsive sizing, tooltips and axis ticks, which are
+  the fiddly parts of hand-built SVG. Sales by store is plain HTML/CSS bars.
+- Each panel loads independently with skeleton, empty and error states; filters are kept in the
+  URL so a view can be bookmarked.
+
+## Requirements
+
+- Java 21
+- Node.js 20.19+ or 22.12+ (developed with Node 24) and npm
+- Docker Desktop (PostgreSQL locally, and Testcontainers for backend tests)
+
+## Local setup (Windows Command Prompt)
+
+Run each block in its own Command Prompt window, starting from the repository root.
+
+**1. PostgreSQL** (first time: create `infra\.env` and set your own `POSTGRES_PASSWORD`)
+
+```bat
+cd infra
+copy .env.example .env
+notepad .env
+docker compose up -d
+```
+
+Later runs only need `cd infra` and `docker compose up -d`. The database listens on
+`127.0.0.1:5435`.
+
+**2. API with demo data** (http://localhost:8080)
+
+```bat
+cd apps\api
+.\mvnw.cmd spring-boot:run -Dspring-boot.run.profiles=demo
+```
+
+The API reads the database name, user and password from `infra\.env`, so no password is passed on
+the command line. To connect elsewhere, set `DB_URL`, `DB_USERNAME` and `DB_PASSWORD`, which take
+precedence:
+
+```bat
+set DB_URL=jdbc:postgresql://localhost:5435/insight_studio
+set DB_USERNAME=insight
+set DB_PASSWORD=your-password
+.\mvnw.cmd spring-boot:run
+```
+
+**3. Web** (http://localhost:5173)
+
+```bat
+cd apps\web
+npm install
+npm run dev
+```
+
+## Demo data
+
+Demo data is loaded **only** when the `demo` Spring profile is active
+(`-Dspring-boot.run.profiles=demo`, or `SPRING_PROFILES_ACTIVE=demo`). Without that profile the
+seeder bean does not exist, so a normal or production start never inserts sample data. A test
+asserts this.
+
+- **Contents:** 1 business (USD, America/New_York), 4 stores (Boston, Cambridge, Providence,
+  Online), 24 products in 7 categories, and 10,397 sales / 17,993 line items from
+  2026-03-01 to 2026-08-31.
+- **Realistic pricing:** some list prices rise on 2026-06-01, and outerwear and knitwear are 30%
+  off from 2026-07-15. That shows historical prices being kept.
+- **Deterministic:** a fixed random seed and fixed dates produce identical data every time. A test
+  pins the exact counts and revenue total.
+- **Idempotent:** if the demo business (`fieldstone-apparel`) already exists, seeding is skipped,
+  so restarting never duplicates data.
+
+To reload from scratch, remove the database volume. **This deletes all local data.**
+
+```bat
+cd infra
+docker compose down -v
+docker compose up -d
+```
+
+## API
+
+All endpoints are `GET` and read-only. Common query parameters:
+
+| Parameter | Format | Default |
+|---|---|---|
+| `from`, `to` | inclusive ISO dates `yyyy-MM-dd`, in the business time zone | `to` = last day with sales (or today); `from` = 30 days ending at `to` |
+| `storeId` | positive integer | all stores |
+
+Ranges may span at most 1,098 days. `from` must not be after `to`. An unknown store returns
+`404`; invalid parameters return `400`.
+
+| Endpoint | Returns |
+|---|---|
+| `/api/dashboard/context` | Business (name, currency, time zone), stores, first/last sale dates |
+| `/api/dashboard/summary` | Revenue, orders, units, average order value, each with the previous equal-length period and % change |
+| `/api/dashboard/revenue?granularity=day\|week\|month` | Revenue and orders per bucket, zero-filled; partial edge buckets are flagged. Granularity is chosen from the range length if omitted |
+| `/api/dashboard/sales-by-store` | Revenue, orders, units and revenue share per store (stores without sales included) |
+| `/api/dashboard/top-products?limit=5` | Best sellers by revenue with units and average price charged (`limit` 1–50) |
+| `/api/dashboard/recent-sales?limit=10` | Latest receipts with store, item count and total (`limit` 1–50) |
+
+Example error:
+
+```json
+{ "status": 400, "title": "Bad Request", "detail": "'from' (2026-09-01) must be on or before 'to' (2026-08-01).", "instance": "/api/dashboard/summary" }
+```
+
+## Tests and checks
+
+```bat
+cd apps\api
+.\mvnw.cmd verify
+
+cd ..\web
+npm run lint
+npm run build
+```
+
+Backend tests start a throwaway PostgreSQL 16 container with Testcontainers, so Docker must be
+running. They do not touch your local database. The tests cover:
+
+- metric calculations
+- API responses against a hand-computed dataset, including time-zone day boundaries, historical
+  prices, store filters, partial buckets and cross-business isolation
+- validation and error responses
+- the demo seeder
+
+## Future features
+
+- Sales, Products and Stores pages with drill-down from the dashboard
+- Category breakdown and product mix over time
+- CSV import of sales data
+- Authentication and multi-business (tenant) isolation
+- Semantic layer / pre-aggregation (e.g. Cube) and the `services/analytics` service for forecasting
+- Export of dashboard views (CSV/PDF)
+- Deployment (containerized API + static web build)
