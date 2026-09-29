@@ -1,6 +1,7 @@
 package com.oussamaksantini.insightstudio.product;
 
 import static com.oussamaksantini.insightstudio.reporting.ReportSql.SALES_FROM;
+import static com.oussamaksantini.insightstudio.reporting.ReportSql.containsPattern;
 import static com.oussamaksantini.insightstudio.reporting.ReportSql.params;
 import static com.oussamaksantini.insightstudio.reporting.ReportSql.salesWhere;
 
@@ -155,17 +156,12 @@ class ProductQueries {
 
     private static MapSqlParameterSource catalogueParams(MapSqlParameterSource params, Criteria criteria) {
         if (criteria.search() != null) {
-            params.addValue("search", "%" + escapeLike(criteria.search()) + "%");
+            params.addValue("search", containsPattern(criteria.search()));
         }
         if (criteria.category() != null) {
             params.addValue("category", criteria.category());
         }
         return params;
-    }
-
-    /** Escapes LIKE wildcards so user input is matched literally (PostgreSQL's default escape is backslash). */
-    static String escapeLike(String value) {
-        return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
     }
 
     private static LocalDate localDate(OffsetDateTime instant, ReportFilter filter) {

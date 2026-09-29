@@ -48,4 +48,12 @@ public final class ReportSql {
         return new MapSqlParameterSource(values);
     }
 
+    /**
+     * A "contains" pattern for {@code ILIKE}. LIKE wildcards in {@code text} are escaped so user
+     * input matches literally (PostgreSQL's default escape character is backslash).
+     */
+    public static String containsPattern(String text) {
+        String escaped = text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
+        return "%" + escaped + "%";
+    }
 }
