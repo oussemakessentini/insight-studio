@@ -7,8 +7,17 @@ import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 /**
  * SQL fragments shared by reporting queries. Revenue is always
  * {@code sale_items.quantity * sale_items.unit_price}, the price actually charged at the time of sale.
+ *
+ * <p><b>An order is a receipt ({@code sales} row) with at least one line item.</b> The schema allows
+ * receipts without items; they carry no revenue or units and are excluded from every count, list
+ * and date range so the dashboard, product and sales figures always agree. {@link #SALES_FROM}
+ * enforces this through its inner join; queries that don't join {@code sale_items} use
+ * {@link #HAS_ITEMS}.
  */
 public final class ReportSql {
+
+    /** Condition on alias {@code s} (sales) keeping only receipts with at least one line item. */
+    public static final String HAS_ITEMS = "EXISTS (SELECT 1 FROM sale_items i WHERE i.sale_id = s.id)\n";
 
     /** Joins used by queries over sales; aliases {@code s}, {@code st} and {@code si}. */
     public static final String SALES_FROM = """
@@ -38,4 +47,5 @@ public final class ReportSql {
         }
         return new MapSqlParameterSource(values);
     }
+
 }

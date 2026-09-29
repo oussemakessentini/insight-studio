@@ -94,14 +94,17 @@ public class ReportingContext {
         }
     }
 
-    /** First and last local sale dates for the business, or {@code null} when it has no sales. */
+    /**
+     * First and last local dates with an order (a receipt with at least one line item), or
+     * {@code null} when the business has none.
+     */
     public DateRange saleDateRange(long businessId, ZoneId zone) {
         String sql = """
                 SELECT MIN(s.sold_at) AS first_sale, MAX(s.sold_at) AS last_sale
                 FROM sales s
                 JOIN stores st ON st.id = s.store_id
                 WHERE st.business_id = :businessId
-                """;
+                """ + "  AND " + ReportSql.HAS_ITEMS;
         return jdbc.queryForObject(sql, Map.of("businessId", businessId), (rs, i) -> {
             OffsetDateTime first = rs.getObject("first_sale", OffsetDateTime.class);
             OffsetDateTime last = rs.getObject("last_sale", OffsetDateTime.class);

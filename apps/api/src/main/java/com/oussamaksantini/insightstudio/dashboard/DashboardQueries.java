@@ -62,12 +62,16 @@ class DashboardQueries {
                 rs.getObject("bucket", LocalDate.class), rs.getBigDecimal("revenue"), rs.getLong("orders")));
     }
 
-    /** Every store of the business (or just the filtered one), including stores without sales. */
+    /**
+     * Every store of the business (or just the filtered one), including stores without sales.
+     * Orders count receipts with at least one line item, like every other report
+     * (see {@link com.oussamaksantini.insightstudio.reporting.ReportSql}).
+     */
     List<StoreSales> salesByStore(ReportFilter filter) {
         String sql = """
                 SELECT st.id, st.code, st.name, st.city,
                        COALESCE(SUM(si.quantity * si.unit_price), 0) AS revenue,
-                       COUNT(DISTINCT s.id)                          AS orders,
+                       COUNT(DISTINCT si.sale_id)                    AS orders,
                        COALESCE(SUM(si.quantity), 0)                 AS units
                 FROM stores st
                 LEFT JOIN sales s ON s.store_id = st.id AND s.sold_at >= :start AND s.sold_at < :end

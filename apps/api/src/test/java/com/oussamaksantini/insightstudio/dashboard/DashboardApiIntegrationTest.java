@@ -31,6 +31,9 @@ import org.springframework.test.web.servlet.MockMvc;
  * S4 store B  05-31 12:00  P1 x1 @ 45.00  -> previous period (05-30..05-31)
  * S6 store B  06-03 00:15  P2 x1 @ 20.00  -> excluded (still June 2 in UTC)
  * S5 store A  06-10 12:00  P3 x1 @ 100.00 -> excluded
+ * S-EMPTY-C    store C  06-01 12:00  no line items -> not an order: store C still has 0 orders,
+ *              and it is not a "recent sale"
+ * S-EMPTY-LATE store A  06-20 12:00  no line items -> does not extend the data range past 06-10
  * Another business sells 999.00 on 06-01 -> never included
  * </pre>
  */
@@ -70,6 +73,8 @@ class DashboardApiIntegrationTest extends PostgresIntegrationTest {
         db.sale(storeB, "S4", "2026-05-31T10:00:00Z", p1, 1, "45.00");
         db.sale(storeA, "S5", "2026-06-10T10:00:00Z", p3, 1, "100.00");
         db.sale(storeB, "S6", "2026-06-02T22:15:00Z", p2, 1, "20.00");
+        db.sale(storeC, "S-EMPTY-C", "2026-06-01T10:00:00Z");
+        db.sale(storeA, "S-EMPTY-LATE", "2026-06-20T10:00:00Z");
 
         long other = db.business("Other Co", "other-co", "USD", "UTC");
         long otherStore = db.store(other, "X", "Other", null);
@@ -165,6 +170,9 @@ class DashboardApiIntegrationTest extends PostgresIntegrationTest {
                 .andExpect(jsonPath("$.stores[0].revenue").value(160.00))
                 .andExpect(jsonPath("$.stores[0].revenueSharePercent").value(64.0))
                 .andExpect(jsonPath("$.stores[1].revenueSharePercent").value(36.0))
+                .andExpect(jsonPath("$.stores[0].orders").value(2))
+                .andExpect(jsonPath("$.stores[1].orders").value(1))
+                // Store C only has a receipt without items, which is not an order.
                 .andExpect(jsonPath("$.stores[2].revenue").value(0))
                 .andExpect(jsonPath("$.stores[2].orders").value(0));
     }
