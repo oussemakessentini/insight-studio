@@ -1,5 +1,6 @@
 package com.oussamaksantini.insightstudio.dashboard.dto;
 
+import com.oussamaksantini.insightstudio.reporting.DateRange;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;

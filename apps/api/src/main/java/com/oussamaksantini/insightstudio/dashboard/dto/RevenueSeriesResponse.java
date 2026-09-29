@@ -1,6 +1,7 @@
 package com.oussamaksantini.insightstudio.dashboard.dto;
 
-import com.oussamaksantini.insightstudio.dashboard.Granularity;
+import com.oussamaksantini.insightstudio.reporting.DateRange;
+import com.oussamaksantini.insightstudio.reporting.Granularity;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;

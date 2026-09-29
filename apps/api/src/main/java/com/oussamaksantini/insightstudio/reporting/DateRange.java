@@ -1,4 +1,4 @@
-package com.oussamaksantini.insightstudio.dashboard.dto;
+package com.oussamaksantini.insightstudio.reporting;
 
 import java.time.LocalDate;
 

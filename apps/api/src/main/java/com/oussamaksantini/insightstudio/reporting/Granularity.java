@@ -1,4 +1,4 @@
-package com.oussamaksantini.insightstudio.dashboard;
+package com.oussamaksantini.insightstudio.reporting;
 
 import com.fasterxml.jackson.annotation.JsonValue;
 import java.time.DayOfWeek;
@@ -39,8 +39,8 @@ public enum Granularity {
         return name().toLowerCase(Locale.ROOT);
     }
 
-    /** PostgreSQL date_trunc field name. */
-    String sqlUnit() {
+    /** PostgreSQL date_trunc field name; safe to inline in SQL because it never comes from user input. */
+    public String sqlUnit() {
         return param();
     }
 

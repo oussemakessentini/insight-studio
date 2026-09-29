@@ -9,8 +9,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.oussamaksantini.insightstudio.PostgresIntegrationTest;
-import java.math.BigDecimal;
-import java.time.OffsetDateTime;
+import com.oussamaksantini.insightstudio.SqlFixture;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -54,29 +53,28 @@ class DashboardApiIntegrationTest extends PostgresIntegrationTest {
 
     @BeforeEach
     void loadFixture() {
-        jdbc.execute(TRUNCATE_ALL);
+        SqlFixture db = new SqlFixture(jdbc);
+        db.clear();
 
-        long business = insertId("INSERT INTO businesses (name, slug, currency, time_zone) VALUES "
-                + "('Test Co', 'test-co', 'EUR', 'Europe/Paris') RETURNING id");
-        storeA = insertId("INSERT INTO stores (business_id, code, name, city) VALUES (?, 'A', 'Alpha', 'Paris') RETURNING id", business);
-        storeB = insertId("INSERT INTO stores (business_id, code, name, city) VALUES (?, 'B', 'Bravo', 'Lyon') RETURNING id", business);
-        storeC = insertId("INSERT INTO stores (business_id, code, name) VALUES (?, 'C', 'Charlie') RETURNING id", business);
-        p1 = product(business, "P1", "Jacket", "Outerwear", "50.00");
-        p2 = product(business, "P2", "Tee", "Tops", "20.00");
-        p3 = product(business, "P3", "Boots", "Footwear", "100.00");
+        long business = db.business("Test Co", "test-co", "EUR", "Europe/Paris");
+        storeA = db.store(business, "A", "Alpha", "Paris");
+        storeB = db.store(business, "B", "Bravo", "Lyon");
+        storeC = db.store(business, "C", "Charlie", null);
+        p1 = db.product(business, "P1", "Jacket", "Outerwear", "50.00");
+        p2 = db.product(business, "P2", "Tee", "Tops", "20.00");
+        p3 = db.product(business, "P3", "Boots", "Footwear", "100.00");
 
-        sale(storeA, "S1", "2026-06-01T08:00:00Z", p1, 2, "40.00", p2, 1, "20.00");
-        sale(storeB, "S2", "2026-06-02T13:00:00Z", p3, 1, "90.00");
-        sale(storeA, "S3", "2026-05-31T22:30:00Z", p2, 3, "20.00");
-        sale(storeB, "S4", "2026-05-31T10:00:00Z", p1, 1, "45.00");
-        sale(storeA, "S5", "2026-06-10T10:00:00Z", p3, 1, "100.00");
-        sale(storeB, "S6", "2026-06-02T22:15:00Z", p2, 1, "20.00");
+        db.sale(storeA, "S1", "2026-06-01T08:00:00Z", p1, 2, "40.00", p2, 1, "20.00");
+        db.sale(storeB, "S2", "2026-06-02T13:00:00Z", p3, 1, "90.00");
+        db.sale(storeA, "S3", "2026-05-31T22:30:00Z", p2, 3, "20.00");
+        db.sale(storeB, "S4", "2026-05-31T10:00:00Z", p1, 1, "45.00");
+        db.sale(storeA, "S5", "2026-06-10T10:00:00Z", p3, 1, "100.00");
+        db.sale(storeB, "S6", "2026-06-02T22:15:00Z", p2, 1, "20.00");
 
-        long other = insertId("INSERT INTO businesses (name, slug, currency, time_zone) VALUES "
-                + "('Other Co', 'other-co', 'USD', 'UTC') RETURNING id");
-        long otherStore = insertId("INSERT INTO stores (business_id, code, name) VALUES (?, 'X', 'Other') RETURNING id", other);
-        long otherProduct = product(other, "X1", "Other thing", "Misc", "999.00");
-        sale(otherStore, "X-1", "2026-06-01T12:00:00Z", otherProduct, 1, "999.00");
+        long other = db.business("Other Co", "other-co", "USD", "UTC");
+        long otherStore = db.store(other, "X", "Other", null);
+        long otherProduct = db.product(other, "X1", "Other thing", "Misc", "999.00");
+        db.sale(otherStore, "X-1", "2026-06-01T12:00:00Z", otherProduct, 1, "999.00");
     }
 
     @Test
@@ -246,25 +244,6 @@ class DashboardApiIntegrationTest extends PostgresIntegrationTest {
                     .andExpect(status().isNotFound())
                     .andExpect(jsonPath("$.detail").value(
                             "No business data found. Start the API with the 'demo' profile to load sample data."));
-        }
-    }
-
-    private long insertId(String sql, Object... args) {
-        return jdbc.queryForObject(sql, Long.class, args);
-    }
-
-    private long product(long businessId, String sku, String name, String category, String listPrice) {
-        return insertId("INSERT INTO products (business_id, sku, name, category, list_price) VALUES (?, ?, ?, ?, ?) RETURNING id",
-                businessId, sku, name, category, new BigDecimal(listPrice));
-    }
-
-    /** Inserts a sale; {@code lines} repeats (productId, quantity, unitPrice). */
-    private void sale(long storeId, String receipt, String soldAtUtc, Object... lines) {
-        long saleId = insertId("INSERT INTO sales (store_id, receipt_number, sold_at) VALUES (?, ?, ?) RETURNING id",
-                storeId, receipt, OffsetDateTime.parse(soldAtUtc));
-        for (int i = 0; i < lines.length; i += 3) {
-            jdbc.update("INSERT INTO sale_items (sale_id, product_id, quantity, unit_price) VALUES (?, ?, ?, ?)",
-                    saleId, lines[i], lines[i + 1], new BigDecimal((String) lines[i + 2]));
         }
     }
 }
