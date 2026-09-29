@@ -6,9 +6,11 @@ interface FilterBarProps {
   stores: StoreOption[]
   dataRange: DateRange | null
   onChange: (filters: Filters) => void
+  /** Hide the store picker on pages that are already about one store (or all stores). */
+  showStore?: boolean
 }
 
-export function FilterBar({ filters, stores, dataRange, onChange }: FilterBarProps) {
+export function FilterBar({ filters, stores, dataRange, onChange, showStore = true }: FilterBarProps) {
   const setPreset = (preset: RangePreset) => {
     // Switching to "custom" keeps the current window as the starting point.
     const range = rangeForPreset(preset, dataRange, { from: filters.from, to: filters.to })
@@ -28,6 +30,7 @@ export function FilterBar({ filters, stores, dataRange, onChange }: FilterBarPro
 
   return (
     <div className="filter-bar" role="group" aria-label="Dashboard filters">
+      {showStore && (
       <label className="field">
         <span className="field-label">Store</span>
         <select
@@ -44,6 +47,7 @@ export function FilterBar({ filters, stores, dataRange, onChange }: FilterBarPro
           ))}
         </select>
       </label>
+      )}
 
       <label className="field">
         <span className="field-label">Date range</span>
