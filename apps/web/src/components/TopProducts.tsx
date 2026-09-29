@@ -1,16 +1,28 @@
 import type { TopProductsResponse } from '../api/types'
 import type { ApiState } from '../hooks/useApi'
 import { formatCurrency, formatNumber } from '../lib/format'
+import { rowClick } from '../lib/rowClick'
+import { Link } from './Link'
 import { AsyncContent, Panel, SkeletonRows } from './Panel'
 
 interface TopProductsProps {
   state: ApiState<TopProductsResponse>
   currency: string
+  productHref: (productId: number) => string
+  allProductsHref: string
 }
 
-export function TopProducts({ state, currency }: TopProductsProps) {
+export function TopProducts({ state, currency, productHref, allProductsHref }: TopProductsProps) {
   return (
-    <Panel title="Top products" subtitle="Ranked by revenue">
+    <Panel
+      title="Top products"
+      subtitle="Ranked by revenue"
+      actions={
+        <Link className="panel-link" href={allProductsHref}>
+          View all products
+        </Link>
+      }
+    >
       <AsyncContent {...state} isEmpty={(d) => d.products.length === 0} skeleton={<SkeletonRows rows={5} />}>
         {(data) => (
           <div className="table-scroll">
@@ -27,10 +39,12 @@ export function TopProducts({ state, currency }: TopProductsProps) {
               </thead>
               <tbody>
                 {data.products.map((p, i) => (
-                  <tr key={p.productId}>
+                  <tr key={p.productId} className="is-clickable" onClick={rowClick(productHref(p.productId))}>
                     <td className="rank">{i + 1}</td>
                     <td>
-                      <span className="cell-primary">{p.name}</span>
+                      <Link className="cell-primary cell-link" href={productHref(p.productId)}>
+                        {p.name}
+                      </Link>
                       <span className="cell-secondary">{p.sku}</span>
                     </td>
                     <td className="hide-sm">
@@ -49,3 +63,4 @@ export function TopProducts({ state, currency }: TopProductsProps) {
     </Panel>
   )
 }
+

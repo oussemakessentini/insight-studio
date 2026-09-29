@@ -56,15 +56,23 @@ export function filtersFromUrl(dataRange: DateRange | null, storeIds: number[]):
   return { preset, ...rangeForPreset(preset, dataRange), storeId }
 }
 
-export function writeFiltersToUrl(filters: Filters): void {
-  const params = new URLSearchParams()
-  if (filters.preset !== DEFAULT_PRESET) params.set('range', filters.preset)
-  if (filters.preset === 'custom') {
-    params.set('from', filters.from)
-    params.set('to', filters.to)
+/** The shared filter keys as URL parameters; `null` means "default, omit from the URL". */
+export function filterQuery(filters: Filters): Record<string, string | null> {
+  const custom = filters.preset === 'custom'
+  return {
+    range: filters.preset !== DEFAULT_PRESET ? filters.preset : null,
+    from: custom ? filters.from : null,
+    to: custom ? filters.to : null,
+    store: filters.storeId !== null ? String(filters.storeId) : null,
   }
-  if (filters.storeId !== null) params.set('store', String(filters.storeId))
+}
+
+/** A link to `path` that carries the current filters, so it also works when opened in a new tab. */
+export function withFilters(path: string, filters: Filters): string {
+  const params = new URLSearchParams()
+  for (const [key, value] of Object.entries(filterQuery(filters))) {
+    if (value !== null) params.set(key, value)
+  }
   const query = params.toString()
-  const url = `${window.location.pathname}${query ? `?${query}` : ''}`
-  window.history.replaceState(null, '', url)
+  return query ? `${path}?${query}` : path
 }

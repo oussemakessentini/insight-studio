@@ -1,15 +1,25 @@
-import type { MetricValue, Summary } from '../api/types'
+import type { DateRange, NullableMetricValue } from '../api/types'
 import type { ApiState } from '../hooks/useApi'
-import { formatCurrency, formatDateRange, formatNumber, formatPercent } from '../lib/format'
+import { formatDateRange, formatPercent } from '../lib/format'
 import { ArrowDownIcon, ArrowUpIcon } from './Icons'
 import { ErrorState, Skeleton } from './Panel'
 
-interface MetricCardsProps {
-  state: ApiState<Summary>
-  currency: string
+export interface MetricCardSpec<T> {
+  label: string
+  pick: (data: T) => NullableMetricValue
+  format: (value: number) => string
+  /** Optional muted line under the value, e.g. the current list price. */
+  caption?: (data: T) => string
 }
 
-export function MetricCards({ state, currency }: MetricCardsProps) {
+interface MetricGridProps<T> {
+  state: ApiState<T>
+  cards: MetricCardSpec<T>[]
+  previousPeriod: (data: T) => DateRange
+}
+
+/** A row of metric cards, each comparing the period with the previous one. */
+export function MetricGrid<T>({ state, cards, previousPeriod }: MetricGridProps<T>) {
   const { data, error, loading, retry } = state
 
   if (error) {
@@ -20,23 +30,16 @@ export function MetricCards({ state, currency }: MetricCardsProps) {
     )
   }
 
-  const money = (v: number) => formatCurrency(v, currency)
-  const cards: { label: string; pick: (s: Summary) => MetricValue; format: (v: number) => string }[] = [
-    { label: 'Revenue', pick: (s) => s.revenue, format: money },
-    { label: 'Orders', pick: (s) => s.orders, format: formatNumber },
-    { label: 'Average order value', pick: (s) => s.averageOrderValue, format: money },
-    { label: 'Units sold', pick: (s) => s.unitsSold, format: formatNumber },
-  ]
-
   return (
     <div className={`metric-grid ${loading && data ? 'is-refreshing' : ''}`} aria-busy={loading}>
-      {cards.map(({ label, pick, format }) => (
+      {cards.map(({ label, pick, format, caption }) => (
         <article key={label} className="metric-card">
           <h3 className="metric-label">{label}</h3>
           {data ? (
             <>
-              <p className="metric-value">{format(pick(data).value)}</p>
-              <Delta metric={pick(data)} format={format} previousPeriod={formatDateRange(data.previousPeriod.from, data.previousPeriod.to)} />
+              <p className="metric-value">{pick(data).value === null ? '—' : format(pick(data).value!)}</p>
+              <Delta metric={pick(data)} format={format} previousPeriod={previousPeriod(data)} />
+              {caption && <p className="metric-caption">{caption(data)}</p>}
             </>
           ) : (
             <>
@@ -50,8 +53,17 @@ export function MetricCards({ state, currency }: MetricCardsProps) {
   )
 }
 
-function Delta({ metric, format, previousPeriod }: { metric: MetricValue; format: (v: number) => string; previousPeriod: string }) {
-  const tooltip = `Previous period (${previousPeriod}): ${format(metric.previousValue)}`
+function Delta({
+  metric,
+  format,
+  previousPeriod,
+}: {
+  metric: NullableMetricValue
+  format: (v: number) => string
+  previousPeriod: DateRange
+}) {
+  const previous = metric.previousValue === null ? 'no sales' : format(metric.previousValue)
+  const tooltip = `Previous period (${formatDateRange(previousPeriod.from, previousPeriod.to)}): ${previous}`
   if (metric.changePercent === null) {
     return (
       <p className="metric-delta" title={tooltip}>

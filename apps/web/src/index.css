@@ -463,8 +463,10 @@ select.control {
   gap: 16px;
 }
 
+/* Stale content stays visible while new data loads, but can't be clicked (it may be outdated). */
 .is-refreshing {
   opacity: 0.55;
+  pointer-events: none;
   transition: opacity 120ms ease;
 }
 
@@ -807,6 +809,189 @@ select.control {
   }
 }
 
+/* ---------- Links, rows & breadcrumbs ----------------------------------- */
+
+.panel-link,
+.breadcrumb a {
+  color: var(--blue-600);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.panel-link:hover,
+.breadcrumb a:hover {
+  text-decoration: underline;
+}
+
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+a.cell-link {
+  color: var(--text);
+  text-decoration: none;
+}
+
+a.cell-link:hover {
+  color: var(--blue-600);
+  text-decoration: underline;
+}
+
+.data-table tr.is-clickable {
+  cursor: pointer;
+}
+
+.data-table tr.is-muted .num {
+  color: var(--text-muted);
+}
+
+.text-muted {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.metric-caption {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.price-diff {
+  display: block;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* ---------- Products toolbar & pagination ------------------------------- */
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.toolbar-search {
+  flex: 1 1 240px;
+}
+
+.toolbar-search .control {
+  width: 100%;
+}
+
+.pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.pagination-summary,
+.pagination-page {
+  font-size: 13px;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.pagination-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.empty-with-action {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.empty-with-action .state-empty {
+  align-self: stretch;
+}
+
+.page-error-action {
+  display: flex;
+  justify-content: center;
+}
+
+a.button {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+}
+
+/* ---------- Price history ------------------------------------------------ */
+
+.price-history {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.price-history-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.price-history-item:first-child {
+  padding-top: 0;
+}
+
+.price-history-item:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.price-history-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.price-history-price {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--navy-900);
+  font-variant-numeric: tabular-nums;
+}
+
+.price-history-dates {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.price-history-meta {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.show-sm-inline {
+  display: none;
+}
+
 /* ---------- Responsive --------------------------------------------------- */
 
 @media (max-width: 1200px) {
@@ -821,6 +1006,10 @@ select.control {
 }
 
 @media (max-width: 900px) {
+  .hide-md {
+    display: none;
+  }
+
   .app-main {
     margin-left: 0;
   }
@@ -928,6 +1117,22 @@ select.control {
 
   .show-sm {
     display: block;
+  }
+
+  .show-sm-inline {
+    display: inline;
+  }
+
+  .toolbar > .field {
+    flex: 1 1 100%;
+  }
+
+  .toolbar select.control {
+    width: 100%;
+  }
+
+  .pagination {
+    justify-content: center;
   }
 }
 

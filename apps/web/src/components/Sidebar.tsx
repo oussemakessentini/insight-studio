@@ -1,28 +1,33 @@
 import type { ComponentType, SVGProps } from 'react'
 import { CloseIcon, DashboardIcon, LogoMark, ReceiptIcon, ReportIcon, StoreIcon, TagIcon } from './Icons'
+import { Link } from './Link'
+
+export type Section = 'dashboard' | 'products'
 
 interface NavItem {
   label: string
   icon: ComponentType<SVGProps<SVGSVGElement>>
-  active?: boolean
+  /** Pages that exist; the rest signal the planned product shape. */
+  section?: Section
 }
 
-// Only the dashboard exists in this version; the rest signal the planned product shape.
 const NAV: NavItem[] = [
-  { label: 'Dashboard', icon: DashboardIcon, active: true },
+  { label: 'Dashboard', icon: DashboardIcon, section: 'dashboard' },
+  { label: 'Products', icon: TagIcon, section: 'products' },
   { label: 'Sales', icon: ReceiptIcon },
-  { label: 'Products', icon: TagIcon },
   { label: 'Stores', icon: StoreIcon },
   { label: 'Reports', icon: ReportIcon },
 ]
 
 interface SidebarProps {
   businessName?: string
+  active: Section | null
+  hrefs: Record<Section, string>
   open: boolean
   onClose: () => void
 }
 
-export function Sidebar({ businessName, open, onClose }: SidebarProps) {
+export function Sidebar({ businessName, active, hrefs, open, onClose }: SidebarProps) {
   return (
     <>
       <aside id="sidebar" className={`sidebar ${open ? 'is-open' : ''}`} aria-label="Main navigation">
@@ -36,13 +41,18 @@ export function Sidebar({ businessName, open, onClose }: SidebarProps) {
 
         <nav>
           <ul className="nav-list">
-            {NAV.map(({ label, icon: NavIcon, active }) => (
+            {NAV.map(({ label, icon: NavIcon, section }) => (
               <li key={label}>
-                {active ? (
-                  <a className="nav-item is-active" href="/" aria-current="page">
+                {section ? (
+                  <Link
+                    className={`nav-item ${active === section ? 'is-active' : ''}`}
+                    href={hrefs[section]}
+                    aria-current={active === section ? 'page' : undefined}
+                    onClick={onClose}
+                  >
                     <NavIcon />
                     {label}
-                  </a>
+                  </Link>
                 ) : (
                   <span className="nav-item is-disabled" aria-disabled="true" title="Coming soon">
                     <NavIcon />

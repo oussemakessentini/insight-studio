@@ -2,6 +2,11 @@ import type {
   DashboardContext,
   Granularity,
   ProblemDetail,
+  ProductDetail,
+  ProductListResponse,
+  ProductSalesTrend,
+  ProductSort,
+  SortDirection,
   RecentSalesResponse,
   RevenueSeries,
   StoreSalesResponse,
@@ -79,4 +84,27 @@ export const dashboardApi = {
 
   recentSales: (f: DashboardFilter, limit: number, signal?: AbortSignal) =>
     getJson<RecentSalesResponse>(`${base}/recent-sales`, { ...f, limit }, signal),
+}
+
+export interface ProductListQuery {
+  q: string
+  category: string | null
+  sort: ProductSort
+  direction: SortDirection
+  page: number
+  size: number
+}
+
+export const productsApi = {
+  list: (f: DashboardFilter, query: ProductListQuery, signal?: AbortSignal) =>
+    getJson<ProductListResponse>('/api/products', { ...f, ...query }, signal),
+
+  categories: (signal?: AbortSignal) =>
+    getJson<{ categories: string[] }>('/api/products/categories', {}, signal),
+
+  detail: (productId: number, f: DashboardFilter, signal?: AbortSignal) =>
+    getJson<ProductDetail>(`/api/products/${productId}`, { ...f }, signal),
+
+  salesTrend: (productId: number, f: DashboardFilter, granularity: Granularity | null, signal?: AbortSignal) =>
+    getJson<ProductSalesTrend>(`/api/products/${productId}/sales-trend`, { ...f, granularity }, signal),
 }

@@ -1,31 +1,26 @@
-import { useEffect, useState } from 'react'
-import { dashboardApi, type DashboardFilter } from '../api/client'
-import type { DashboardContext, Granularity } from '../api/types'
+import { dashboardApi } from '../api/client'
+import type { Granularity, Summary } from '../api/types'
 import { FilterBar } from '../components/FilterBar'
-import { MetricCards } from '../components/MetricCards'
+import { MetricGrid, type MetricCardSpec } from '../components/MetricCards'
+import { PageHeader } from '../components/PageHeader'
 import { RecentSales } from '../components/RecentSales'
-import { RevenueChart } from '../components/RevenueChart'
 import { StoreSales } from '../components/StoreSales'
 import { TopProducts } from '../components/TopProducts'
+import { TrendChart } from '../components/TrendChart'
 import { useApi } from '../hooks/useApi'
-import { filtersFromUrl, writeFiltersToUrl, type Filters } from '../lib/filters'
-import { formatDate, formatDateRange } from '../lib/format'
+import { useStateResetOn } from '../hooks/useStateResetOn'
+import { formatCurrency, formatDate, formatDateRange, formatNumber } from '../lib/format'
+import { apiFilter, filterKey, type PageProps } from './types'
 
 const TOP_PRODUCTS_LIMIT = 8
 const RECENT_SALES_LIMIT = 8
 
-export function DashboardPage({ context }: { context: DashboardContext }) {
+export function DashboardPage({ context, filters, onFiltersChange, href }: PageProps) {
   const { business, stores, dataRange } = context
-  const [filters, setFilters] = useState<Filters>(() =>
-    filtersFromUrl(dataRange, stores.map((s) => s.id)),
-  )
-  // null = let the API pick a bucket size that suits the range.
-  const [granularity, setGranularity] = useState<Granularity | null>(null)
-
-  useEffect(() => writeFiltersToUrl(filters), [filters])
-
-  const query: DashboardFilter = { from: filters.from, to: filters.to, storeId: filters.storeId }
-  const key = `${query.from}|${query.to}|${query.storeId ?? 'all'}`
+  const query = apiFilter(filters)
+  const key = filterKey(filters)
+  // null = let the API pick a bucket size that suits the range; reset when filters change.
+  const [granularity, setGranularity] = useStateResetOn<Granularity | null>(key, null)
 
   const summary = useApi(`summary|${key}`, (signal) => dashboardApi.summary(query, signal))
   const revenue = useApi(`revenue|${key}|${granularity}`, (signal) => dashboardApi.revenue(query, granularity, signal))
@@ -34,33 +29,35 @@ export function DashboardPage({ context }: { context: DashboardContext }) {
   const recent = useApi(`recent|${key}`, (signal) => dashboardApi.recentSales(query, RECENT_SALES_LIMIT, signal))
 
   const selectedStore = stores.find((s) => s.id === filters.storeId)
+  const money = (v: number) => formatCurrency(v, business.currency)
+  const cards: MetricCardSpec<Summary>[] = [
+    { label: 'Revenue', pick: (s) => s.revenue, format: money },
+    { label: 'Orders', pick: (s) => s.orders, format: formatNumber },
+    { label: 'Average order value', pick: (s) => s.averageOrderValue, format: money },
+    { label: 'Units sold', pick: (s) => s.unitsSold, format: formatNumber },
+  ]
 
   return (
     <>
-      <header className="page-header">
-        <div>
-          <p className="page-eyebrow">{business.name}</p>
-          <h1 className="page-title">Sales overview</h1>
-          <p className="page-subtitle">
+      <PageHeader
+        eyebrow={business.name}
+        title="Sales overview"
+        subtitle={
+          <>
             {selectedStore ? selectedStore.name : 'All stores'} · {formatDateRange(filters.from, filters.to)}
             {dataRange && <span className="page-subtitle-muted"> · Data through {formatDate(dataRange.to)}</span>}
-          </p>
-        </div>
-        <FilterBar
-          filters={filters}
-          stores={stores}
-          dataRange={dataRange}
-          onChange={(next) => {
-            setFilters(next)
-            setGranularity(null)
-          }}
-        />
-      </header>
+          </>
+        }
+      >
+        <FilterBar filters={filters} stores={stores} dataRange={dataRange} onChange={onFiltersChange} />
+      </PageHeader>
 
-      <MetricCards state={summary} currency={business.currency} />
+      <MetricGrid state={summary} cards={cards} previousPeriod={(s) => s.previousPeriod} />
 
       <div className="grid grid-main">
-        <RevenueChart
+        <TrendChart
+          title="Revenue over time"
+          subtitle="Revenue from items sold, at the prices charged"
           state={revenue}
           currency={business.currency}
           granularity={granularity}
@@ -70,7 +67,12 @@ export function DashboardPage({ context }: { context: DashboardContext }) {
       </div>
 
       <div className="grid grid-halves">
-        <TopProducts state={products} currency={business.currency} />
+        <TopProducts
+          state={products}
+          currency={business.currency}
+          productHref={(id) => href(`/products/${id}`)}
+          allProductsHref={href('/products')}
+        />
         <RecentSales state={recent} currency={business.currency} timeZone={business.timeZone} />
       </div>
     </>

@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { Area, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import type { Granularity, RevenuePoint, RevenueSeries } from '../api/types'
+import type { Granularity, RevenuePoint } from '../api/types'
 import type { ApiState } from '../hooks/useApi'
 import { formatBucketLabel, formatBucketTick, formatCurrency, formatNumber } from '../lib/format'
 import { AsyncContent, Panel, Skeleton } from './Panel'
@@ -17,21 +17,46 @@ const GRANULARITIES: { value: Granularity; label: string }[] = [
   { value: 'month', label: 'Month' },
 ]
 
-interface RevenueChartProps {
-  state: ApiState<RevenueSeries>
+export interface TrendSeries<P extends RevenuePoint> {
+  granularity: Granularity
+  points: P[]
+}
+
+/** Extra per-bucket values shown in the tooltip and as table columns, after revenue and orders. */
+export interface TrendDetail<P> {
+  label: string
+  value: (point: P) => string
+}
+
+interface TrendChartProps<P extends RevenuePoint> {
+  title: string
+  subtitle: string
+  state: ApiState<TrendSeries<P>>
   currency: string
   granularity: Granularity | null
   onGranularityChange: (g: Granularity) => void
+  details?: TrendDetail<P>[]
+  emptyMessage?: string
 }
 
-export function RevenueChart({ state, currency, granularity, onGranularityChange }: RevenueChartProps) {
+/** Revenue over time (single series) with a chart/table toggle and partial-bucket handling. */
+export function TrendChart<P extends RevenuePoint>({
+  title,
+  subtitle,
+  state,
+  currency,
+  granularity,
+  onGranularityChange,
+  details = [],
+  emptyMessage,
+}: TrendChartProps<P>) {
   const [view, setView] = useState<'chart' | 'table'>('chart')
   const active = granularity ?? state.data?.granularity ?? 'day'
 
   return (
     <Panel
-      title="Revenue over time"
-      subtitle="Revenue from items sold, at the prices charged"
+      title={title}
+      subtitle={subtitle}
       className="panel-revenue"
       actions={
         <>
@@ -51,15 +76,22 @@ export function RevenueChart({ state, currency, granularity, onGranularityChange
       <AsyncContent
         {...state}
         isEmpty={(d) => d.points.every((p) => p.orders === 0)}
+        emptyMessage={emptyMessage}
         skeleton={<Skeleton height={280} />}
       >
-        {(data) => (view === 'chart' ? <Chart data={data} currency={currency} /> : <SeriesTable data={data} currency={currency} />)}
+        {(data) =>
+          view === 'chart' ? (
+            <Chart data={data} currency={currency} details={details} />
+          ) : (
+            <SeriesTable data={data} currency={currency} details={details} />
+          )
+        }
       </AsyncContent>
     </Panel>
   )
 }
 
-interface ChartRow extends RevenuePoint {
+type ChartRow<P> = P & {
   /** Revenue for complete buckets; null breaks the solid area around partial ones. */
   solid: number | null
   /** Revenue for partial buckets and their neighbours, drawn dashed. */
@@ -70,7 +102,7 @@ interface ChartRow extends RevenuePoint {
  * Edge buckets that are only partly inside the range (e.g. a week with one day selected) hold
  * fewer days of sales, so they are drawn dashed rather than as a misleading drop.
  */
-function toChartRows(points: RevenuePoint[]): ChartRow[] {
+function toChartRows<P extends RevenuePoint>(points: P[]): ChartRow<P>[] {
   return points.map((p, i) => {
     const touchesPartial = !p.complete || points[i - 1]?.complete === false || points[i + 1]?.complete === false
     return {
@@ -81,8 +113,15 @@ function toChartRows(points: RevenuePoint[]): ChartRow[] {
   })
 }
 
-function Chart({ data, currency }: { data: RevenueSeries; currency: string }) {
+interface ViewProps<P extends RevenuePoint> {
+  data: TrendSeries<P>
+  currency: string
+  details: TrendDetail<P>[]
+}
+
+function Chart<P extends RevenuePoint>({ data, currency, details }: ViewProps<P>) {
   const { granularity, points } = data
+  const gradientId = `trend-fill-${useId().replace(/:/g, '')}`
   const rows = toChartRows(points)
   const hasPartial = points.some((p) => !p.complete)
   return (
@@ -90,7 +129,7 @@ function Chart({ data, currency }: { data: RevenueSeries; currency: string }) {
       <ResponsiveContainer width="100%" height={300}>
         <ComposedChart data={rows} margin={{ top: 8, right: 12, bottom: 0, left: 0 }}>
           <defs>
-            <linearGradient id="revenueFill" x1="0" y1="0" x2="0" y2="1">
+            <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor={SERIES} stopOpacity={0.14} />
               <stop offset="100%" stopColor={SERIES} stopOpacity={0.02} />
             </linearGradient>
@@ -117,7 +156,7 @@ function Chart({ data, currency }: { data: RevenueSeries; currency: string }) {
             cursor={{ stroke: AXIS_TEXT, strokeWidth: 1 }}
             content={({ active, payload }) => {
               if (!active || !payload?.length) return null
-              const point = payload[0].payload as ChartRow
+              const point = payload[0].payload as ChartRow<P>
               return (
                 <div className="chart-tooltip">
                   <p className="chart-tooltip-title">{formatBucketLabel(point.periodStart, granularity)}</p>
@@ -136,6 +175,13 @@ function Chart({ data, currency }: { data: RevenueSeries; currency: string }) {
                     <span>Orders</span>
                     <strong>{formatNumber(point.orders)}</strong>
                   </p>
+                  {details.map((d) => (
+                    <p key={d.label} className="chart-tooltip-row">
+                      <span className="swatch swatch-empty" aria-hidden="true" />
+                      <span>{d.label}</span>
+                      <strong>{d.value(point)}</strong>
+                    </p>
+                  ))}
                 </div>
               )
             }}
@@ -146,7 +192,7 @@ function Chart({ data, currency }: { data: RevenueSeries; currency: string }) {
             name="Revenue"
             stroke={SERIES}
             strokeWidth={2}
-            fill="url(#revenueFill)"
+            fill={`url(#${gradientId})`}
             dot={false}
             activeDot={{ r: 5, fill: SERIES, stroke: SURFACE, strokeWidth: 2 }}
             isAnimationActive={false}
@@ -177,7 +223,7 @@ function Chart({ data, currency }: { data: RevenueSeries; currency: string }) {
   )
 }
 
-function SeriesTable({ data, currency }: { data: RevenueSeries; currency: string }) {
+function SeriesTable<P extends RevenuePoint>({ data, currency, details }: ViewProps<P>) {
   return (
     <div className="table-scroll table-scroll-tall">
       <table className="data-table">
@@ -185,6 +231,11 @@ function SeriesTable({ data, currency }: { data: RevenueSeries; currency: string
           <tr>
             <th scope="col">Period</th>
             <th scope="col" className="num">Orders</th>
+            {details.map((d) => (
+              <th key={d.label} scope="col" className="num">
+                {d.label}
+              </th>
+            ))}
             <th scope="col" className="num">Revenue</th>
           </tr>
         </thead>
@@ -200,6 +251,11 @@ function SeriesTable({ data, currency }: { data: RevenueSeries; currency: string
                 )}
               </td>
               <td className="num">{formatNumber(p.orders)}</td>
+              {details.map((d) => (
+                <td key={d.label} className="num">
+                  {d.value(p)}
+                </td>
+              ))}
               <td className="num">{formatCurrency(p.revenue, currency)}</td>
             </tr>
           ))}
@@ -216,7 +272,7 @@ interface SegmentedProps<T extends string> {
   onChange: (value: T) => void
 }
 
-function Segmented<T extends string>({ label, options, value, onChange }: SegmentedProps<T>) {
+export function Segmented<T extends string>({ label, options, value, onChange }: SegmentedProps<T>) {
   return (
     <div className="segmented" role="group" aria-label={label}>
       {options.map((o) => (

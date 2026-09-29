@@ -1,8 +1,9 @@
 # Insight Studio
 
 A retail analytics dashboard for a multi-store clothing business. A Spring Boot API computes
-sales metrics from PostgreSQL; a React dashboard presents revenue trends, store performance, top
-products and recent sales, with date-range and store filters.
+sales metrics from PostgreSQL; a React app presents revenue trends, store performance, top
+products and recent sales, plus a searchable product catalogue with per-product sales history.
+Date-range and store filters apply across every page.
 
 The bundled demo business, **Fieldstone Apparel Co.**, and all of its stores, products and sales
 are fictional.
@@ -39,8 +40,13 @@ a product's list price changes. Days, weeks and months are bucketed in the busin
 **Backend design**
 
 - Schema is owned by Flyway; Hibernate runs with `ddl-auto=validate`.
-- Dashboard queries use `NamedParameterJdbcTemplate`: each endpoint is one aggregate SQL query
-  (no N+1), scoped to the business, a half-open time window and an optional store.
+- Reporting queries use `NamedParameterJdbcTemplate`: each endpoint runs one aggregate SQL query
+  per result (no N+1), scoped to the business, a half-open time window and an optional store.
+- The `reporting` package holds what the dashboard and product endpoints share: business
+  resolution, date/store filter defaults and validation, SQL filter fragments and bucket math, so
+  filters behave identically everywhere.
+- User input never reaches SQL text: sort columns and date buckets come from enums, and search
+  terms are bound parameters with `LIKE` wildcards escaped.
 - Responses are Java records (DTOs); JPA entities are never serialized.
 - Errors are RFC 9457 problem details (`application/problem+json`) with a readable `detail`.
 
@@ -50,8 +56,20 @@ a product's list price changes. Days, weeks and months are bucketed in the busin
 - [Recharts](https://recharts.org) renders the revenue chart. It is React-native (declarative
   components, React 19 support) and handles responsive sizing, tooltips and axis ticks, which are
   the fiddly parts of hand-built SVG. Sales by store is plain HTML/CSS bars.
-- Each panel loads independently with skeleton, empty and error states; filters are kept in the
-  URL so a view can be bookmarked.
+- Each panel loads independently with skeleton, empty and error states.
+- A small History API router (no routing dependency) serves `/`, `/products` and
+  `/products/{id}`. The store and date filters are shared by all pages and kept in the URL, along
+  with page-specific state such as search, sort and page number, so views can be bookmarked and
+  the back button restores them. Deep links work with the Vite dev and preview servers, which fall
+  back to `index.html`; a static host needs the same fallback configured.
+
+## Pages
+
+| Path | Shows |
+|---|---|
+| `/` | Dashboard: metric cards, revenue over time, sales by store, top products, recent sales. Top-product rows open the product page |
+| `/products` | Catalogue: every product with current price, average price actually charged, units, orders and revenue for the period. Search by name or SKU, filter by category, sort, 20 per page |
+| `/products/{id}` | Product: period metrics vs the previous period, sales trend at the prices charged, and each distinct price the product sold at, compared with today's list price |
 
 ## Requirements
 
@@ -146,6 +164,25 @@ Ranges may span at most 1,098 days. `from` must not be after `to`. An unknown st
 | `/api/dashboard/sales-by-store` | Revenue, orders, units and revenue share per store (stores without sales included) |
 | `/api/dashboard/top-products?limit=5` | Best sellers by revenue with units and average price charged (`limit` 1–50) |
 | `/api/dashboard/recent-sales?limit=10` | Latest receipts with store, item count and total (`limit` 1–50) |
+| `/api/products` | One page of the catalogue with sales performance for the period; products without sales are included (see below) |
+| `/api/products/categories` | Distinct product categories, for the category filter |
+| `/api/products/{id}` | Product details; revenue, units, orders and average selling price vs the previous period; price history (each unit price charged, with first/last date, units and orders) |
+| `/api/products/{id}/sales-trend?granularity=day\|week\|month` | Revenue, units, orders and average price charged per bucket, zero-filled, with partial buckets flagged |
+
+`/api/products` also accepts:
+
+| Parameter | Format | Default |
+|---|---|---|
+| `q` | text, up to 100 characters; case-insensitive match on name or SKU (`%` and `_` match literally) | none |
+| `category` | exact category name | all |
+| `sort` | `revenue`, `units`, `name`, `sku` or `price` (current list price) | `revenue` |
+| `direction` | `asc` or `desc` | `desc` for revenue, units and price; `asc` for name and sku |
+| `page` | zero-based page number, 0–10,000 | `0` |
+| `size` | page size, 1–100 | `20` |
+
+The response includes `totalItems` and `totalPages`. A page past the end returns an empty
+`items` list. `averageSellingPrice` is `null` when a product sold nothing in the period. Products
+of other businesses return `404`.
 
 Example error:
 
@@ -167,15 +204,18 @@ npm run build
 Backend tests start a throwaway PostgreSQL 16 container with Testcontainers, so Docker must be
 running. They do not touch your local database. The tests cover:
 
-- metric calculations
-- API responses against a hand-computed dataset, including time-zone day boundaries, historical
-  prices, store filters, partial buckets and cross-business isolation
+- metric and bucket calculations
+- dashboard API responses against a hand-computed dataset, including time-zone day boundaries,
+  historical prices, store filters, partial buckets and cross-business isolation
+- product API: search (including literal wildcards), category and store filters, sorting,
+  paging, price history, trends, and products of other businesses
 - validation and error responses
 - the demo seeder
 
 ## Future features
 
-- Sales, Products and Stores pages with drill-down from the dashboard
+- Sales and Stores pages with drill-down from the dashboard
+- Per-store breakdown on the product page
 - Category breakdown and product mix over time
 - CSV import of sales data
 - Authentication and multi-business (tenant) isolation
