@@ -126,11 +126,12 @@ class BusinessIsolationIntegrationTest extends PostgresIntegrationTest {
                 "/api/reports/categories.csv?" + WINDOW,
                 "/api/imports",
                 "/api/imports/" + batch,
-                "/api/businesses/" + business + "/members");
+                "/api/businesses/" + business + "/members",
+                "/api/businesses/" + business + "/invitations");
     }
 
     private static boolean adminOnly(String path) {
-        return path.startsWith("/api/imports") || path.endsWith("/members");
+        return path.startsWith("/api/imports") || path.endsWith("/members") || path.endsWith("/invitations");
     }
 
     private Map<String, Long> counts() {
@@ -190,7 +191,7 @@ class BusinessIsolationIntegrationTest extends PostgresIntegrationTest {
             // Both A's and B's path ids: the selector alone must already fail.
             for (List<String> paths : List.of(readsOf(a, storeA, productA, saleA, batchA), readsOf(b, storeB, productB, saleB, batchB))) {
                 for (String path : paths) {
-                    if (path.equals("/api/businesses/" + a + "/members")) {
+                    if (path.startsWith("/api/businesses/" + a + "/")) {
                         continue; // business endpoints are selected by their path id, not the header
                     }
                     MvcResult result = perform(get(path).with(as(user, b)));
@@ -215,7 +216,8 @@ class BusinessIsolationIntegrationTest extends PostgresIntegrationTest {
                 "/api/products?storeId=" + storeB,
                 "/api/reports/monthly.csv?storeId=" + storeB,
                 "/api/imports/" + batchB,
-                "/api/businesses/" + b + "/members");
+                "/api/businesses/" + b + "/members",
+                "/api/businesses/" + b + "/invitations");
         for (String path : foreign) {
             MvcResult result = perform(get(path).with(as(aOwner, a)));
             assertThat(result.getResponse().getStatus()).as(path).isEqualTo(404);
@@ -286,7 +288,7 @@ class BusinessIsolationIntegrationTest extends PostgresIntegrationTest {
             // B in the path.
             mvc.perform(patch("/api/businesses/" + b).with(as(user, a)).contentType(MediaType.APPLICATION_JSON)
                     .content("{\"name\":\"Hijacked\"}")).andExpect(status().isNotFound());
-            mvc.perform(post("/api/businesses/" + b + "/members").with(as(user, a)).contentType(MediaType.APPLICATION_JSON)
+            mvc.perform(post("/api/businesses/" + b + "/invitations").with(as(user, a)).contentType(MediaType.APPLICATION_JSON)
                     .content("{\"email\":\"" + user.email() + "\",\"role\":\"OWNER\"}")).andExpect(status().isNotFound());
             mvc.perform(patch("/api/businesses/" + b + "/members/" + bOwner.id()).with(as(user, a))
                     .contentType(MediaType.APPLICATION_JSON).content("{\"role\":\"VIEWER\"}")).andExpect(status().isNotFound());

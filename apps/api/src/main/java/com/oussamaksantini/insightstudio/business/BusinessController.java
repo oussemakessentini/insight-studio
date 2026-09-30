@@ -2,7 +2,6 @@ package com.oussamaksantini.insightstudio.business;
 
 import com.oussamaksantini.insightstudio.account.AccountPrincipal;
 import com.oussamaksantini.insightstudio.account.CurrentAccount;
-import com.oussamaksantini.insightstudio.business.dto.AddMemberRequest;
 import com.oussamaksantini.insightstudio.business.dto.BusinessResponse;
 import com.oussamaksantini.insightstudio.business.dto.ChangeRoleRequest;
 import com.oussamaksantini.insightstudio.business.dto.CreateBusinessRequest;
@@ -22,7 +21,10 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-/** The signed-in user's businesses and their members. Requires a session (never the public demo). */
+/**
+ * The signed-in user's businesses and their members. Requires a session (never the public demo).
+ * People join a business through invitations ({@link InvitationController}).
+ */
 @RestController
 @RequestMapping("/api/businesses")
 class BusinessController {
@@ -52,11 +54,6 @@ class BusinessController {
     @GetMapping("/{businessId}/members")
     List<MemberResponse> members(@PathVariable @Positive long businessId) {
         return service.members(caller(), businessId);
-    }
-
-    @PostMapping("/{businessId}/members")
-    ResponseEntity<MemberResponse> addMember(@PathVariable @Positive long businessId, @RequestBody AddMemberRequest body) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(service.addMember(caller(), businessId, body.email(), body.role()));
     }
 
     @PatchMapping("/{businessId}/members/{userId}")

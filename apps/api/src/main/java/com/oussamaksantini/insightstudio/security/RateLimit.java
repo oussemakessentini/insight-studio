@@ -23,6 +23,11 @@ public record RateLimit(String name, int max, Duration window) {
     /** Attempts to use a reset token from one client IP. */
     public static final RateLimit RESET_CONFIRM_PER_IP = new RateLimit("reset-confirm:ip", 20, Duration.ofMinutes(15));
 
+    /** Invitations sent by one account. */
+    public static final RateLimit INVITATIONS_PER_ACCOUNT = new RateLimit("invite:account", 20, Duration.ofHours(1));
+    /** Invitation previews and acceptances from one client IP. */
+    public static final RateLimit INVITATION_TOKEN_PER_IP = new RateLimit("invite-token:ip", 30, Duration.ofMinutes(15));
+
     public RateLimit {
         if (max < 1 || window.isNegative() || window.isZero() || window.compareTo(RateLimiter.RETENTION) > 0) {
             throw new IllegalArgumentException("Invalid rate limit " + name);

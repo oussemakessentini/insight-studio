@@ -72,6 +72,10 @@ class BusinessRolesIntegrationTest extends PostgresIntegrationTest {
         return "/api/businesses/" + business + "/members";
     }
 
+    private String invitations() {
+        return "/api/businesses/" + business + "/invitations";
+    }
+
     private Role roleOf(TestUser user) {
         return jdbc.queryForList("SELECT role FROM memberships WHERE user_id = ? AND business_id = ?", String.class,
                 user.id(), business).stream().findFirst().map(Role::valueOf).orElse(null);
@@ -99,7 +103,8 @@ class BusinessRolesIntegrationTest extends PostgresIntegrationTest {
             json(post("/api/products"), viewer, "{\"sku\":\"P2\",\"name\":\"N\",\"category\":\"C\",\"listPrice\":1}")
                     .andExpect(status().isForbidden());
             mvc.perform(get(members()).with(as(viewer, business))).andExpect(status().isForbidden());
-            json(post(members()), viewer, "{\"email\":\"outsider@test.co\",\"role\":\"VIEWER\"}").andExpect(status().isForbidden());
+            mvc.perform(get(invitations()).with(as(viewer, business))).andExpect(status().isForbidden());
+            json(post(invitations()), viewer, "{\"email\":\"outsider@test.co\",\"role\":\"VIEWER\"}").andExpect(status().isForbidden());
             json(patch("/api/businesses/" + business), viewer, "{\"name\":\"New\"}").andExpect(status().isForbidden());
             mvc.perform(delete(members() + "/" + admin.id()).with(as(viewer, business))).andExpect(status().isForbidden());
 
@@ -107,6 +112,7 @@ class BusinessRolesIntegrationTest extends PostgresIntegrationTest {
             assertThat(db.count("products")).isEqualTo(1);
             assertThat(db.count("sales")).isZero();
             assertThat(db.count("memberships")).isEqualTo(3);
+            assertThat(db.count("invitations")).isZero();
         }
 
         @Test
@@ -143,17 +149,20 @@ class BusinessRolesIntegrationTest extends PostgresIntegrationTest {
                     .andExpect(jsonPath("$[0].role").value("OWNER"))
                     .andExpect(jsonPath("$[0].since").isNotEmpty());
 
-            json(post(members()), admin, "{\"email\":\"OUTSIDER@test.co\",\"role\":\"viewer\"}")
+            json(post(invitations()), admin, "{\"email\":\"OUTSIDER@test.co\",\"role\":\"viewer\"}")
                     .andExpect(status().isCreated())
-                    .andExpect(jsonPath("$.userId").value(outsider.id()))
+                    .andExpect(jsonPath("$.email").value("OUTSIDER@test.co"))
                     .andExpect(jsonPath("$.role").value("VIEWER"));
-            mvc.perform(delete(members() + "/" + outsider.id()).with(as(admin, business))).andExpect(status().isNoContent());
-            json(post(members()), admin, "{\"email\":\"outsider@test.co\",\"role\":\"ADMIN\"}").andExpect(status().isCreated());
+            json(post(invitations()), admin, "{\"email\":\"someone@test.co\",\"role\":\"ADMIN\"}").andExpect(status().isCreated());
+            // An invitation is not a membership until it is accepted.
+            assertThat(roleOf(outsider)).isNull();
+            mvc.perform(get(invitations()).with(as(admin, business)))
+                    .andExpect(jsonPath("$[*].email", contains("someone@test.co", "OUTSIDER@test.co")));
         }
 
         @Test
         void cannotActAsOwner() throws Exception {
-            json(post(members()), admin, "{\"email\":\"outsider@test.co\",\"role\":\"OWNER\"}").andExpect(status().isForbidden());
+            json(post(invitations()), admin, "{\"email\":\"outsider@test.co\",\"role\":\"OWNER\"}").andExpect(status().isForbidden());
             json(patch(members() + "/" + viewer.id()), admin, "{\"role\":\"ADMIN\"}").andExpect(status().isForbidden());
             json(patch("/api/businesses/" + business), admin, "{\"name\":\"New\"}").andExpect(status().isForbidden());
             TestUser admin2 = accounts.member("admin2@test.co", business, Role.ADMIN);
@@ -175,7 +184,8 @@ class BusinessRolesIntegrationTest extends PostgresIntegrationTest {
 
         @Test
         void managesMembersAndBusiness() throws Exception {
-            json(post(members()), owner, "{\"email\":\"outsider@test.co\",\"role\":\"OWNER\"}").andExpect(status().isCreated());
+            json(post(invitations()), owner, "{\"email\":\"new-owner@test.co\",\"role\":\"OWNER\"}").andExpect(status().isCreated());
+            accounts.member(outsider, business, Role.OWNER);
             json(patch(members() + "/" + viewer.id()), owner, "{\"role\":\"ADMIN\"}")
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.role").value("ADMIN"));
@@ -208,12 +218,17 @@ class BusinessRolesIntegrationTest extends PostgresIntegrationTest {
 
         @Test
         void memberInputErrors() throws Exception {
-            json(post(members()), owner, "{\"email\":\"ghost@test.co\",\"role\":\"VIEWER\"}")
-                    .andExpect(status().isNotFound())
-                    .andExpect(jsonPath("$.detail").value("No account with that email."));
-            json(post(members()), owner, "{\"email\":\"viewer@test.co\",\"role\":\"VIEWER\"}").andExpect(status().isConflict());
-            json(post(members()), owner, "{\"email\":\"outsider@test.co\",\"role\":\"GOD\"}").andExpect(status().isBadRequest());
-            json(post(members()), owner, "{\"email\":\"\",\"role\":\"VIEWER\"}").andExpect(status().isBadRequest());
+            // Members can no longer be added directly: people join through invitations.
+            json(post(members()), owner, "{\"email\":\"outsider@test.co\",\"role\":\"VIEWER\"}")
+                    .andExpect(status().isMethodNotAllowed());
+            // An address without an account is invited like any other (nothing reveals which exist).
+            json(post(invitations()), owner, "{\"email\":\"ghost@test.co\",\"role\":\"VIEWER\"}").andExpect(status().isCreated());
+            json(post(invitations()), owner, "{\"email\":\"VIEWER@test.co\",\"role\":\"VIEWER\"}")
+                    .andExpect(status().isConflict())
+                    .andExpect(jsonPath("$.detail").value("This person is already a member."));
+            json(post(invitations()), owner, "{\"email\":\"outsider@test.co\",\"role\":\"GOD\"}").andExpect(status().isBadRequest());
+            json(post(invitations()), owner, "{\"email\":\"\",\"role\":\"VIEWER\"}").andExpect(status().isBadRequest());
+            json(post(invitations()), owner, "{\"email\":\"not-an-email\",\"role\":\"VIEWER\"}").andExpect(status().isBadRequest());
             json(patch(members() + "/" + outsider.id()), owner, "{\"role\":\"VIEWER\"}").andExpect(status().isNotFound());
             mvc.perform(delete(members() + "/999999").with(as(owner, business))).andExpect(status().isNotFound());
         }

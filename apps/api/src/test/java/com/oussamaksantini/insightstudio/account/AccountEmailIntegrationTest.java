@@ -25,14 +25,15 @@ import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 /**
- * Password recovery end to end with real SMTP: an API instance configured like a deployment
- * (its real mail notifier, debug logging) emails the link to Mailpit, the link resets the
- * password, and neither the link nor the token ever reaches the log.
+ * Account emails end to end with real SMTP: an API instance configured like a deployment (its real
+ * notifiers, debug logging) emails password-reset and invitation links to Mailpit, the links work,
+ * and neither a link nor a token ever reaches the log.
  */
 @ExtendWith(OutputCaptureExtension.class)
-class PasswordResetEmailIntegrationTest extends PostgresIntegrationTest {
+class AccountEmailIntegrationTest extends PostgresIntegrationTest {
 
     private static final String EMAIL = "reset-by-mail@example.com";
+    private static final Pattern INVITE_LINK = Pattern.compile("https://app\\.example\\.com/invite\\?token=([A-Za-z0-9_-]{43})");
     private static final Pattern LINK = Pattern.compile("https://app\\.example\\.com/reset-password\\?token=([A-Za-z0-9_-]{43})");
 
     private static Mailpit mailpit;
@@ -102,6 +103,48 @@ class PasswordResetEmailIntegrationTest extends PostgresIntegrationTest {
                 .contains("Password reset for account")
                 .doesNotContain(token)
                 .doesNotContain("reset-password?token");
+    }
+
+    @Test
+    void anInvitationArrivesBySmtpWorksAndIsNeverLogged(CapturedOutput output) throws Exception {
+        long business = new SqlFixture(jdbc).business("Mail Co", "mail-co", "EUR", "UTC");
+        jdbc.update("INSERT INTO memberships (user_id, business_id, role) SELECT id, ?, 'OWNER' FROM users WHERE email = ?",
+                business, EMAIL);
+        String token;
+        try (ApiInstance api = ApiInstance.start(database, deployedLike(mailpit));
+                HttpApiClient owner = api.client();
+                HttpApiClient invitee = api.client()) {
+            owner.get("/api/session");
+            assertThat(owner.postJson("/api/auth/sign-in",
+                    "{\"email\":\"%s\",\"password\":\"%s\"}".formatted(EMAIL, TestAccounts.PASSWORD)).statusCode()).isEqualTo(200);
+            assertThat(owner.postJson("/api/businesses/%d/invitations".formatted(business),
+                    "{\"email\":\"new.person@example.com\",\"role\":\"ADMIN\"}").statusCode()).isEqualTo(201);
+
+            Mailpit.Message message = mailpit.awaitMessages(1).getFirst();
+            assertThat(message.to()).isEqualTo("new.person@example.com");
+            assertThat(message.subject()).isEqualTo("You're invited to join Mail Co on Insight Studio");
+            assertThat(message.text()).contains("invited you to join Mail Co on Insight Studio as an admin")
+                    .contains("(new.person@example.com)").contains("expires on");
+            Matcher link = INVITE_LINK.matcher(message.text());
+            assertThat(link.find()).as("invitation link in %s", message.text()).isTrue();
+            token = link.group(1);
+
+            invitee.get("/api/session");
+            assertThat(invitee.postJson("/api/auth/sign-up",
+                    "{\"email\":\"new.person@example.com\",\"password\":\"%s\",\"displayName\":\"New\"}"
+                            .formatted(TestAccounts.PASSWORD)).statusCode()).isEqualTo(201);
+            assertThat(invitee.postJson("/api/invitations/accept", "{\"token\":\"%s\"}".formatted(token)).statusCode())
+                    .isEqualTo(200);
+        }
+        assertThat(jdbc.queryForObject(
+                "SELECT m.role FROM memberships m JOIN users u ON u.id = m.user_id "
+                        + "WHERE u.email = 'new.person@example.com' AND m.business_id = ?", String.class, business))
+                .isEqualTo("ADMIN");
+        assertThat(output.getAll())
+                .contains("by invitation")
+                .doesNotContain(token)
+                .doesNotContain("invite?token")
+                .doesNotContain("new.person@example.com");
     }
 
     @Test

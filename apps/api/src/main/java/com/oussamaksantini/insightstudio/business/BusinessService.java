@@ -1,7 +1,6 @@
 package com.oussamaksantini.insightstudio.business;
 
 import com.oussamaksantini.insightstudio.account.AccountPrincipal;
-import com.oussamaksantini.insightstudio.account.UserQueries;
 import com.oussamaksantini.insightstudio.business.BusinessQueries.MemberRow;
 import com.oussamaksantini.insightstudio.business.dto.BusinessResponse;
 import com.oussamaksantini.insightstudio.business.dto.MemberResponse;
@@ -42,7 +41,6 @@ public class BusinessService {
     private final BusinessQueries queries;
     private final BusinessRepository businesses;
     private final Memberships memberships;
-    private final UserQueries users;
     private final PublicDemo demo;
     private final SecureRandom random = new SecureRandom();
 
@@ -50,12 +48,10 @@ public class BusinessService {
             BusinessQueries queries,
             BusinessRepository businesses,
             Memberships memberships,
-            UserQueries users,
             PublicDemo demo) {
         this.queries = queries;
         this.businesses = businesses;
         this.memberships = memberships;
-        this.users = users;
         this.demo = demo;
     }
 
@@ -109,28 +105,6 @@ public class BusinessService {
     public List<MemberResponse> members(AccountPrincipal caller, long businessId) {
         requireRole(caller, businessId, Role.ADMIN);
         return queries.members(businessId).stream().map(BusinessService::response).toList();
-    }
-
-    /** OWNER adds any role; ADMIN adds VIEWERs and ADMINs. The account must exist. */
-    @Transactional
-    public MemberResponse addMember(AccountPrincipal caller, long businessId, String email, String roleName) {
-        Role callerRole = requireRole(caller, businessId, Role.ADMIN);
-        Role role = parseRole(roleName);
-        if (role == Role.OWNER && callerRole != Role.OWNER) {
-            throw ApiException.forbidden("You need the OWNER role for this.");
-        }
-        String cleanEmail = email == null ? "" : email.strip();
-        if (cleanEmail.isEmpty()) {
-            throw ApiException.badRequest("Enter the email of the person to add.");
-        }
-        UserQueries.UserRow user = (cleanEmail.length() > 254 ? Optional.<UserQueries.UserRow>empty()
-                : users.findByEmail(cleanEmail))
-                .orElseThrow(() -> ApiException.notFound("No account with that email."));
-        if (!queries.insertMembership(user.id(), businessId, role)) {
-            throw ApiException.conflict("This person is already a member.");
-        }
-        log.info("Account {} added account {} to business {} as {}.", caller.userId(), user.id(), businessId, role);
-        return queries.member(businessId, user.id()).map(BusinessService::response).orElseThrow();
     }
 
     /** OWNER: changes a member's role; the last owner cannot be demoted. */

@@ -47,6 +47,7 @@ class SecurityConfig {
 
     static final String[] PUBLIC_POSTS = {
         "/api/auth/sign-up", "/api/auth/sign-in", "/api/auth/password/forgot", "/api/auth/password/reset",
+        "/api/invitations/preview",
     };
 
     @Bean

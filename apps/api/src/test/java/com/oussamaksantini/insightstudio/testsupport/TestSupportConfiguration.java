@@ -13,4 +13,10 @@ public class TestSupportConfiguration {
     CapturingPasswordResetNotifier capturingPasswordResetNotifier() {
         return new CapturingPasswordResetNotifier();
     }
+
+    @Bean
+    @Primary
+    CapturingInvitationNotifier capturingInvitationNotifier() {
+        return new CapturingInvitationNotifier();
+    }
 }

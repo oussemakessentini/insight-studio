@@ -53,7 +53,7 @@ class SecurityRulesIntegrationTest extends PostgresIntegrationTest {
         for (String path : List.of("/api/dashboard/context", "/api/dashboard/summary", "/api/products", "/api/products/1",
                 "/api/sales", "/api/sales/1", "/api/stores", "/api/stores/1", "/api/reports/monthly",
                 "/api/reports/monthly.csv", "/api/analytics/summary", "/api/imports", "/api/imports/1", "/api/businesses",
-                "/api/businesses/" + business + "/members")) {
+                "/api/businesses/" + business + "/members", "/api/businesses/" + business + "/invitations")) {
             mvc.perform(get(path))
                     .andExpect(status().isUnauthorized())
                     .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))

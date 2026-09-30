@@ -147,8 +147,10 @@ class PublicDemoIntegrationTest extends PostgresIntegrationTest {
                         .content("{\"name\":\"N\",\"currency\":\"USD\",\"timeZone\":\"UTC\"}").with(csrf()),
                 patch("/api/businesses/" + demo).contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"N\"}")
                         .with(csrf()),
-                post("/api/businesses/" + demo + "/members").contentType(MediaType.APPLICATION_JSON)
+                post("/api/businesses/" + demo + "/invitations").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"email\":\"owner@private.test\",\"role\":\"OWNER\"}").with(csrf()),
+                post("/api/invitations/accept").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"token\":\"anything\"}").with(csrf()),
                 delete("/api/businesses/" + demo + "/members/" + privateOwner.id()).with(csrf()));
         for (RequestBuilder write : writes) {
             body(write, 401);
