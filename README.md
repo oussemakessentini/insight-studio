@@ -2,9 +2,11 @@
 
 A retail analytics dashboard for a multi-store clothing business. A Spring Boot API computes
 sales metrics from PostgreSQL; a React app presents revenue trends, store performance, top
-products and recent sales, plus a searchable product catalogue with per-product sales history
-and a sales register with receipt-level detail. Date-range and store filters apply across every
-page.
+products and recent sales, plus a searchable product catalogue with per-product sales history,
+a sales register with receipt-level detail, per-store performance and monthly/category reports
+with CSV export. Date-range and store filters apply across every page. Sales can be loaded from
+CSV in local development, and an optional Cube semantic layer serves the same figures for
+analytics.
 
 The bundled demo business, **Fieldstone Apparel Co.**, and all of its stores, products and sales
 are fictional.
@@ -17,8 +19,8 @@ apps/
   web/        React 19 + TypeScript + Vite dashboard
 infra/        Docker Compose for local PostgreSQL 16
 services/
-  analytics/  reserved for a future analytics service
-docs/
+  analytics/  Cube semantic layer (optional; reconciled against the API)
+docs/         feature notes: stores, reports, CSV import, analytics
 ```
 
 ```
@@ -34,6 +36,7 @@ Browser ──> Vite dev server (:5173) ──/api proxy──> Spring Boot API 
 | `products` | Catalogue with SKU, category and **current** list price |
 | `sales` | One receipt: store, receipt number, `sold_at` timestamp |
 | `sale_items` | Product, quantity and the **unit price actually charged** |
+| `import_batches` | CSV imports (V3): file name, content hash (unique per business), counts and total; imported sales point to their batch through `sales.import_batch_id` |
 
 Revenue is always `SUM(quantity × sale_items.unit_price)`, so historical revenue is unaffected when
 a product's list price changes. Days, weeks and months are bucketed in the business's time zone.
@@ -43,7 +46,7 @@ a product's list price changes. Days, weeks and months are bucketed in the busin
 - Schema is owned by Flyway; Hibernate runs with `ddl-auto=validate`.
 - Reporting queries use `NamedParameterJdbcTemplate`: each endpoint runs one aggregate SQL query
   per result (no N+1), scoped to the business, a half-open time window and an optional store.
-- The `reporting` package holds what the dashboard, product and sales endpoints share: business
+- The `reporting` package holds what the dashboard, product, sales, store and report endpoints share: business
   resolution, date/store filter defaults and validation, SQL filter fragments and bucket math, so
   filters behave identically everywhere.
 - User input never reaches SQL text: sort columns and date buckets come from enums, and search
@@ -58,8 +61,8 @@ a product's list price changes. Days, weeks and months are bucketed in the busin
   components, React 19 support) and handles responsive sizing, tooltips and axis ticks, which are
   the fiddly parts of hand-built SVG. Sales by store is plain HTML/CSS bars.
 - Each panel loads independently with skeleton, empty and error states.
-- A small History API router (no routing dependency) serves `/`, `/products`,
-  `/products/{id}`, `/sales` and `/sales/{id}`. The store and date filters are shared by all pages and kept in the URL, along
+- A small History API router (no routing dependency) serves every page listed below. The
+  store and date filters are shared by all pages and kept in the URL, along
   with page-specific state such as search, sort and page number, so views can be bookmarked and
   the back button restores them. Deep links work with the Vite dev and preview servers, which fall
   back to `index.html`; a static host needs the same fallback configured.
@@ -73,6 +76,10 @@ a product's list price changes. Days, weeks and months are bucketed in the busin
 | `/products/{id}` | Product: period metrics vs the previous period, sales trend at the prices charged, and each distinct price the product sold at, compared with today's list price. Links to the receipts containing the product |
 | `/sales` | Sales register: every receipt in the period with local date and time, store, items, units and total. Search by receipt number, filter to receipts containing a product, sort newest, oldest or largest, 25 per page |
 | `/sales/{id}` | Receipt: date and time, store, and each line's product, quantity, unit price charged (compared with today's list price) and line total |
+| `/stores` | Every store's revenue, share, change vs the previous period, orders, units and average order value, with an all-stores total |
+| `/stores/{id}` | Store: metrics vs the previous period, revenue trend, category mix and top products. Store pages ignore the global store filter |
+| `/reports` | Monthly and Categories reports (tab kept in the URL) with totals rows that equal the dashboard, partial months marked, and CSV export |
+| `/imports`, `/imports/{id}` | CSV import (local development only): validate (dry run) with a line-by-line error table, import, and history. Hidden unless imports are enabled |
 
 **Orders, items and units:** an *order* is a receipt with at least one line item. The schema
 allows a receipt without items, but it has no revenue or units, so it is left out of every list,
@@ -128,6 +135,28 @@ cd apps\web
 npm install
 npm run dev
 ```
+
+**Optional: CSV import** (local development only). Imports write data through endpoints without
+authentication, so they are off by default and exist only with the `local` profile:
+
+```bat
+cd apps\api
+.\mvnw.cmd spring-boot:run -Dspring-boot.run.profiles=demo,local
+```
+
+Never activate `local` in a deployed environment. File format, rules and a sample file:
+[docs/csv-import.md](docs/csv-import.md) and [docs/sample-import.csv](docs/sample-import.csv).
+
+**Optional: Cube analytics** (http://localhost:4000, dev mode, local use only). Set
+`CUBEJS_API_SECRET` in `infra\.env` (see `infra\.env.example`), then:
+
+```bat
+cd infra
+docker compose --profile analytics up -d
+```
+
+Plain `docker compose up -d` still starts only PostgreSQL. Model, measures and the
+reconciliation script: [docs/analytics.md](docs/analytics.md).
 
 ## Demo data
 
@@ -215,6 +244,22 @@ revenue. `/api/sales/{id}` also returns receipts without items, with empty `line
 detail is not limited by the date or store filters. Sales, and products used as filters,
 belonging to other businesses return `404`.
 
+| Stores and reports | Returns |
+|---|---|
+| `/api/stores` | Every store with revenue, orders, units, average order value, revenue share and change vs the previous period |
+| `/api/stores/{id}`, `/api/stores/{id}/revenue`, `/api/stores/{id}/top-products` | Store metrics vs the previous period with category mix; revenue series and top products (same shapes as the dashboard) |
+| `/api/reports/monthly`, `/api/reports/categories` | Monthly rows (partial months flagged, month-over-month change) and category rows, each with totals that equal the dashboard summary |
+| `/api/reports/monthly.csv`, `/api/reports/categories.csv` | The same reports as RFC 4180 CSV downloads, protected against formula injection |
+
+Details: [docs/stores.md](docs/stores.md), [docs/reports.md](docs/reports.md).
+
+**CSV import** (only with `insight.imports.enabled=true`, i.e. the `local` profile; otherwise these
+paths return `404`): `POST /api/imports` (multipart `file`, `dryRun` default `true`) returns
+`VALIDATED`, `IMPORTED` or `REJECTED` with counts, total and line-level errors; `GET /api/imports`
+and `/api/imports/{id}` list and show batches. Imports are all-or-nothing, never overwrite an
+existing receipt, and reject a file already imported into the same business (by content hash).
+The dashboard context reports `features.importsEnabled`. See [docs/csv-import.md](docs/csv-import.md).
+
 Example error:
 
 ```json
@@ -244,23 +289,29 @@ running. They do not touch your local database. The tests cover:
   line totals at historical prices, and sales of other businesses
 - the order definition: receipts without items are excluded from the Sales list, dashboard
   store counts and the data range, and the Sales list count and totals match the dashboard
+- stores and reports: every figure reconciles with the dashboard summary for the same filters;
+  month boundaries in the business time zone; CSV quoting and formula-injection escaping
+- CSV import: parser edge cases, every validation rule, business-scoped duplicate receipts and
+  file hashes, dry runs and rejected files write nothing, atomic writes, dashboard and Sales
+  figures moving by exactly the imported totals, and import endpoints absent by default
 - validation and error responses
 - the demo seeder
 
 ## Roadmap
 
-**In progress (first iterations, developed in parallel branches):**
+**Done in the latest phase (first iterations):**
 
 - Stores: per-store performance list and store detail pages
 - Reports: on-demand monthly and category reports with CSV export
 - CSV import of sales data, available only in local development (`local` profile)
-- Cube analytics service in `services/analytics` (semantic layer and pre-aggregations), reconciled
-  against the API but not yet used by the app
+- Cube analytics service in `services/analytics` (semantic layer and daily pre-aggregations),
+  reconciled against the API but not yet used by the app
 
 **Later:**
 
 - Saved reports (named, reusable report definitions)
-- Cube integration in the API and dashboard (querying Cube instead of SQL, with access control)
+- Cube integration in the API and dashboard (querying Cube instead of SQL, with access control,
+  per-business scoping and production mode instead of dev mode)
 - Forecasting in `services/analytics`
 - Per-store breakdown on the product page
 - Product mix over time
