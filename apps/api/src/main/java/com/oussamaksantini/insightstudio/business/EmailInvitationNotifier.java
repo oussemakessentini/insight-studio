@@ -1,27 +1,27 @@
 package com.oussamaksantini.insightstudio.business;
 
-import com.oussamaksantini.insightstudio.mail.MailDelivery;
+import com.oussamaksantini.insightstudio.mail.MailOutbox;
 import com.oussamaksantini.insightstudio.tenancy.Role;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.Locale;
 
-/** Emails invitation links through {@link MailDelivery} (SMTP; asynchronous; never logged). */
-class SmtpInvitationNotifier implements InvitationNotifier {
+/** Queues invitation emails in the {@link MailOutbox} (sent over SMTP; never logged). */
+class EmailInvitationNotifier implements InvitationNotifier {
 
     private static final DateTimeFormatter EXPIRY =
             DateTimeFormatter.ofPattern("d MMMM yyyy 'at' HH:mm 'UTC'", Locale.ENGLISH).withZone(ZoneOffset.UTC);
 
-    private final MailDelivery mail;
+    private final MailOutbox outbox;
 
-    SmtpInvitationNotifier(MailDelivery mail) {
-        this.mail = mail;
+    EmailInvitationNotifier(MailOutbox outbox) {
+        this.outbox = outbox;
     }
 
     @Override
     public void sendInvitation(String email, String invitedBy, String businessName, Role role, String link, Instant expiresAt) {
-        mail.send("invitation", email, "You're invited to join %s on Insight Studio".formatted(businessName), """
+        outbox.enqueue("invitation", email, "You're invited to join %s on Insight Studio".formatted(businessName), """
                 Hello,
 
                 %s invited you to join %s on Insight Studio as %s.
@@ -35,7 +35,7 @@ class SmtpInvitationNotifier implements InvitationNotifier {
                 ignore this email.
 
                 Insight Studio
-                """.formatted(invitedBy, businessName, article(role), email, link, EXPIRY.format(expiresAt)));
+                """.formatted(invitedBy, businessName, article(role), email, link, EXPIRY.format(expiresAt)), expiresAt);
     }
 
     private static String article(Role role) {

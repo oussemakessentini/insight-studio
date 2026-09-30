@@ -1,6 +1,6 @@
 package com.oussamaksantini.insightstudio.account;
 
-import com.oussamaksantini.insightstudio.mail.MailDelivery;
+import com.oussamaksantini.insightstudio.mail.MailOutbox;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.crypto.factory.PasswordEncoderFactories;
@@ -15,9 +15,9 @@ class AccountConfiguration {
         return PasswordEncoderFactories.createDelegatingPasswordEncoder();
     }
 
-    /** Emails reset links over SMTP (Mailpit in development). */
+    /** Emails reset links through the mail outbox (Mailpit in development). */
     @Bean
-    PasswordResetNotifier passwordResetNotifier(MailDelivery mail) {
-        return new SmtpPasswordResetNotifier(mail);
+    PasswordResetNotifier passwordResetNotifier(MailOutbox outbox) {
+        return new EmailPasswordResetNotifier(outbox);
     }
 }

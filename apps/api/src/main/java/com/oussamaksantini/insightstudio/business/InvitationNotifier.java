@@ -9,5 +9,6 @@ import java.time.Instant;
  */
 public interface InvitationNotifier {
 
+    /** Called inside the transaction that stores the invitation, so the email exists exactly when it does. */
     void sendInvitation(String email, String invitedBy, String businessName, Role role, String link, Instant expiresAt);
 }

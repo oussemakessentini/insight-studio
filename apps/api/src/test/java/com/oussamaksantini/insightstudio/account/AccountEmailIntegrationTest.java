@@ -65,6 +65,8 @@ class AccountEmailIntegrationTest extends PostgresIntegrationTest {
         Map<String, Object> properties = new HashMap<>(mailpit.apiProperties());
         properties.put("insight.accounts.web-base-url", "https://app.example.com/");
         properties.put("insight.mail.from", "Insight Studio <no-reply@app.example.com>");
+        properties.put("insight.mail.outbox.enabled", true);
+        properties.put("insight.mail.outbox.poll-interval", "PT0.2S");
         // Even debug logging must not reveal a link.
         properties.put("logging.level.com.oussamaksantini", "DEBUG");
         properties.put("logging.level.org.springframework.mail", "DEBUG");
@@ -164,5 +166,8 @@ class AccountEmailIntegrationTest extends PostgresIntegrationTest {
             }
         }
         assertThat(output.getAll()).contains("Could not send a password reset email").doesNotContain("reset-password?token");
+        // The email waits in the outbox for the next attempt.
+        assertThat(jdbc.queryForObject("SELECT status FROM mail_outbox", String.class)).isEqualTo("PENDING");
+        assertThat(jdbc.queryForObject("SELECT last_error FROM mail_outbox", String.class)).isNotBlank();
     }
 }

@@ -31,6 +31,9 @@ public final class ApiInstance implements AutoCloseable {
         properties.put("spring.datasource.hikari.maximum-pool-size", 4);
         // Only the test's own configuration: never the developer's infra/.env.
         properties.put("spring.config.import", "");
+        // No emails leave unless a test asks for a worker (and never to a developer's local Mailpit).
+        properties.put("insight.mail.outbox.enabled", false);
+        properties.put("spring.mail.port", 9);
         properties.putAll(extraProperties);
         // Command-line arguments: they take precedence over application.properties (builder
         // properties would only be defaults).
@@ -45,6 +48,10 @@ public final class ApiInstance implements AutoCloseable {
 
     public int port() {
         return ((WebServerApplicationContext) context).getWebServer().getPort();
+    }
+
+    public <T> T bean(Class<T> type) {
+        return context.getBean(type);
     }
 
     public HttpApiClient client() {

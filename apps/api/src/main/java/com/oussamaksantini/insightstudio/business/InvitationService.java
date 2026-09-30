@@ -118,10 +118,11 @@ public class InvitationService {
                         "This business has %d open invitations; revoke some first.".formatted(MAX_OPEN_PER_BUSINESS));
             }
             long id = invitations.insert(businessId, cleanEmail, role, sha256(token), caller.userId(), expiresAt);
-            return invitations.find(businessId, id).orElseThrow();
+            InvitationRow row = invitations.find(businessId, id).orElseThrow();
+            notifier.sendInvitation(row.email(), row.invitedByName(), row.businessName(), role,
+                    links.link("/invite", token), row.expiresAt());
+            return row;
         });
-        notifier.sendInvitation(created.email(), created.invitedByName(), created.businessName(), role,
-                links.link("/invite", token), created.expiresAt());
         log.info("Account {} invited someone to business {} as {} (invitation {}).", caller.userId(), businessId, role, created.id());
         return response(created);
     }

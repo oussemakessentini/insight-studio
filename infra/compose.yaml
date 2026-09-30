@@ -26,6 +26,8 @@ services:
       - "127.0.0.1:8025:8025"
     environment:
       MP_MAX_MESSAGES: "500"
+      # Skip the reverse DNS lookup of each SMTP client (slow through Docker Desktop).
+      MP_SMTP_DISABLE_RDNS: "true"
 
   # Cube semantic layer over the same database (model in services/analytics).
   # Opt-in: docker compose --profile analytics up -d. Plain `up` starts db and mailpit.

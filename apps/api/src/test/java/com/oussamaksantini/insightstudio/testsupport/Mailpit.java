@@ -34,6 +34,8 @@ public final class Mailpit implements AutoCloseable {
     public Mailpit() {
         container = new GenericContainer<>(DockerImageName.parse(IMAGE))
                 .withExposedPorts(SMTP, HTTP)
+                // No reverse DNS lookup per connection (about a second each through Docker Desktop).
+                .withEnv("MP_SMTP_DISABLE_RDNS", "true")
                 .waitingFor(Wait.forHttp("/livez").forPort(HTTP))
                 .withStartupTimeout(Duration.ofMinutes(3));
         container.start();

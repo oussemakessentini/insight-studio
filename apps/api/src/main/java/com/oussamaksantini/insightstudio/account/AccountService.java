@@ -174,11 +174,13 @@ public class AccountService {
         byte[] bytes = new byte[RESET_TOKEN_BYTES];
         random.nextBytes(bytes);
         String token = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+        Instant expiresAt = Instant.now().plus(RESET_TOKEN_LIFETIME);
         transactions.executeWithoutResult(status -> {
             users.invalidateResetTokens(user.get().id());
-            users.insertResetToken(user.get().id(), sha256(token), Instant.now().plus(RESET_TOKEN_LIFETIME));
+            users.insertResetToken(user.get().id(), sha256(token), expiresAt);
+            notifier.sendResetLink(user.get().email(), user.get().displayName(),
+                    properties.link("/reset-password", token), expiresAt);
         });
-        notifier.sendResetLink(user.get().email(), user.get().displayName(), properties.link("/reset-password", token));
     }
 
     /**
