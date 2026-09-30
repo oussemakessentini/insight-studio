@@ -7,24 +7,26 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.oussamaksantini.insightstudio.PostgresIntegrationTest;
 import com.oussamaksantini.insightstudio.SqlFixture;
+import com.oussamaksantini.insightstudio.testsupport.TestAccounts;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.web.context.WebApplicationContext;
 
 /**
  * With no Cube URL (the default), analytics answers 503 and never calls Cube. The URL is blanked
  * explicitly so a developer's own INSIGHT_CUBE_URL (environment or infra/.env) cannot leak in.
  */
-@WithMockUser
 @TestPropertySource(properties = {"insight.cube.url=", "INSIGHT_CUBE_URL="})
 class AnalyticsNotConfiguredIntegrationTest extends PostgresIntegrationTest {
 
     @Autowired
+    WebApplicationContext context;
+
     MockMvc mvc;
 
     @Autowired
@@ -34,7 +36,8 @@ class AnalyticsNotConfiguredIntegrationTest extends PostgresIntegrationTest {
     void setUp() {
         SqlFixture db = new SqlFixture(jdbc);
         db.clear();
-        db.business("Alpha Co", "alpha-co", "EUR", "Europe/Paris");
+        long business = db.business("Alpha Co", "alpha-co", "EUR", "Europe/Paris");
+        mvc = TestAccounts.ownerMvc(context, jdbc, business);
     }
 
     @Test

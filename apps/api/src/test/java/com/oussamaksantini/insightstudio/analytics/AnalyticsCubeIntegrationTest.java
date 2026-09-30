@@ -3,7 +3,7 @@ package com.oussamaksantini.insightstudio.analytics;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.containsString;
-import static org.mockito.Mockito.when;
+import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -11,9 +11,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.oussamaksantini.insightstudio.PostgresIntegrationTest;
 import com.oussamaksantini.insightstudio.SqlFixture;
-import com.oussamaksantini.insightstudio.tenancy.BusinessAccess;
 import com.oussamaksantini.insightstudio.tenancy.CurrentBusiness;
 import com.oussamaksantini.insightstudio.tenancy.Role;
+import com.oussamaksantini.insightstudio.testsupport.TestAccounts;
+import com.oussamaksantini.insightstudio.testsupport.TestAccounts.TestUser;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
@@ -32,11 +33,11 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
-import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.web.context.WebApplicationContext;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -45,10 +46,9 @@ import tools.jackson.databind.json.JsonMapper;
  * records every request. Proves the token's {@code businessId} is the business resolved by
  * {@link CurrentBusiness}, whatever the request says, and how Cube failures are reported.
  *
- * <p>{@link CurrentBusiness} is mocked so the test does not depend on how sign-in resolves the
- * business; business A is created first so {@code ReportingContext} resolves it too.
+ * <p>Requests are made by real members through the real {@link CurrentBusiness} (no mocks): the
+ * default {@code mvc} acts as a VIEWER of business A with A selected.
  */
-@WithMockUser
 class AnalyticsCubeIntegrationTest extends PostgresIntegrationTest {
 
     private static final String SECRET = "stub-cube-secret-0123456789abcdef-0123456789";
@@ -79,13 +79,17 @@ class AnalyticsCubeIntegrationTest extends PostgresIntegrationTest {
     }
 
     @Autowired
-    MockMvc mvc;
+    WebApplicationContext context;
 
     @Autowired
     JdbcTemplate jdbc;
 
-    @MockitoBean
-    CurrentBusiness currentBusiness;
+    /** Every request as {@link #viewerA} with business A selected. */
+    MockMvc mvc;
+    /** No default identity; each request says who it is. */
+    MockMvc plain;
+    TestUser viewerA;
+    TestUser memberOfBoth;
 
     long businessA;
     long businessB;
@@ -100,7 +104,12 @@ class AnalyticsCubeIntegrationTest extends PostgresIntegrationTest {
         businessB = db.business("Beta Co", "beta-co", "USD", "America/New_York");
         storeA = db.store(businessA, "A1", "Alpha One", "Paris");
         storeB = db.store(businessB, "B1", "Beta One", "Boston");
-        when(currentBusiness.require()).thenReturn(new BusinessAccess(businessA, Role.VIEWER, false, 7L));
+        TestAccounts accounts = new TestAccounts(jdbc);
+        viewerA = accounts.member("viewer-a@example.com", businessA, Role.VIEWER);
+        memberOfBoth = accounts.member("both@example.com", businessA, Role.VIEWER);
+        accounts.member(memberOfBoth, businessB, Role.VIEWER);
+        mvc = TestAccounts.mvc(context, viewerA, businessA);
+        plain = MockMvcBuilders.webAppContextSetup(context).apply(springSecurity()).build();
 
         requests.clear();
         calls.set(0);
@@ -110,10 +119,11 @@ class AnalyticsCubeIntegrationTest extends PostgresIntegrationTest {
     }
 
     @Test
-    void signsTheTokenForTheResolvedBusinessNotTheRequestedOne() throws Exception {
-        mvc.perform(get("/api/analytics/summary")
+    void signsTheTokenForTheMembersBusinessAndIgnoresABusinessIdParameter() throws Exception {
+        // A single-membership viewer of A, no header: A is resolved; the query parameter is ignored.
+        plain.perform(get("/api/analytics/summary")
+                        .with(TestAccounts.as(viewerA))
                         .param("from", "2026-06-01").param("to", "2026-06-02")
-                        .header("X-Business-Id", String.valueOf(businessB))
                         .param("businessId", String.valueOf(businessB)))
                 .andExpect(status().isOk())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
@@ -142,6 +152,35 @@ class AnalyticsCubeIntegrationTest extends PostgresIntegrationTest {
         assertThat(filter.get("member").asString()).isEqualTo("orders.business_id");
         assertThat(filter.get("values").get(0).asString()).isEqualTo(String.valueOf(businessA));
         assertThat(query.get("filters")).hasSize(1);
+    }
+
+    @Test
+    void aMemberOfAnotherBusinessCannotSelectBAndCubeIsNeverCalled() throws Exception {
+        plain.perform(get("/api/analytics/summary")
+                        .with(TestAccounts.as(viewerA))
+                        .header("X-Business-Id", String.valueOf(businessB)))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.detail").value("Business not found."));
+        assertThat(requests).isEmpty();
+    }
+
+    @Test
+    void anonymousCallersAreRejectedWithoutCallingCube() throws Exception {
+        plain.perform(get("/api/analytics/summary")).andExpect(status().isUnauthorized());
+        assertThat(requests).isEmpty();
+    }
+
+    @Test
+    void aMemberOfBothBusinessesGetsATokenForTheSelectedOneOnly() throws Exception {
+        plain.perform(get("/api/analytics/summary").with(TestAccounts.as(memberOfBoth, businessA)))
+                .andExpect(status().isOk());
+        plain.perform(get("/api/analytics/summary").with(TestAccounts.as(memberOfBoth, businessB)))
+                .andExpect(status().isOk());
+
+        assertThat(requests).hasSize(2);
+        assertThat(VERIFIER.verify(requests.get(0).authorization().substring("Bearer ".length()))).isEqualTo(businessA);
+        assertThat(VERIFIER.verify(requests.get(1).authorization().substring("Bearer ".length()))).isEqualTo(businessB);
+        assertThat(requests.get(1).body().get("query").get("timezone").asString()).isEqualTo("America/New_York");
     }
 
     @Test
