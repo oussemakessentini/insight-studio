@@ -58,8 +58,11 @@ export interface CreatedStore {
   city: string | null
 }
 
-/** Mirrors the server policy (contract §1); the server stays authoritative. */
-export const PASSWORD_POLICY = { minLength: 12, maxLength: 128 }
+/**
+ * Mirrors the server policy (account/PasswordPolicy): at least 12 characters and at most 72 UTF-8
+ * bytes, bcrypt's input limit. The server stays authoritative.
+ */
+export const PASSWORD_POLICY = { minLength: 12, maxBytes: 72 }
 
 // None of these are about a business chosen by the X-Business-Id header.
 const account = { businessId: null }
