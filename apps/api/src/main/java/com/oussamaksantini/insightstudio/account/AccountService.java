@@ -178,7 +178,7 @@ public class AccountService {
             users.invalidateResetTokens(user.get().id());
             users.insertResetToken(user.get().id(), sha256(token), Instant.now().plus(RESET_TOKEN_LIFETIME));
         });
-        notifier.sendResetLink(user.get().email(), user.get().displayName(), properties.resetLinkBase() + "?token=" + token);
+        notifier.sendResetLink(user.get().email(), user.get().displayName(), properties.link("/reset-password", token));
     }
 
     /**

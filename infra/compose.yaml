@@ -16,8 +16,19 @@ services:
       timeout: 5s
       retries: 10
 
+  # Development mail catcher: the API's password-reset and invitation emails land here
+  # (SMTP 127.0.0.1:1025, the API's default) and nothing leaves the machine. Read them at
+  # http://localhost:8025. Deployed environments use a real SMTP server instead (MAIL_HOST, ...).
+  mailpit:
+    image: axllent/mailpit:v1.31.3
+    ports:
+      - "127.0.0.1:1025:1025"
+      - "127.0.0.1:8025:8025"
+    environment:
+      MP_MAX_MESSAGES: "500"
+
   # Cube semantic layer over the same database (model in services/analytics).
-  # Opt-in: docker compose --profile analytics up -d. Plain `up` starts only db.
+  # Opt-in: docker compose --profile analytics up -d. Plain `up` starts db and mailpit.
   # Private: the Spring API is its only client. Production mode (no Playground, no
   # dev endpoints); every request needs a short-lived JWT signed with
   # CUBEJS_API_SECRET that names one business (services/analytics/security.js).

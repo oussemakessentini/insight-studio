@@ -5,7 +5,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CopyOnWriteArrayList;
 
-/** Records reset links instead of logging them, so tests can follow them. */
+/** Records reset links instead of emailing them, so tests can follow them. */
 public class CapturingPasswordResetNotifier implements PasswordResetNotifier {
 
     public record Sent(String email, String link) {
