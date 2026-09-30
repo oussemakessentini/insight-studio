@@ -46,4 +46,22 @@ public final class SqlFixture {
     private long insertId(String sql, Object... args) {
         return jdbc.queryForObject(sql, Long.class, args);
     }
+
+    /** Records an import batch for the business and attaches {@code saleIds} to it. */
+    public long importBatch(long businessId, String fileName, String totalAmount, long... saleIds) {
+        long batchId = insertId("""
+                INSERT INTO import_batches
+                    (business_id, file_name, content_sha256, status, row_count, sale_count, line_count, total_amount)
+                VALUES (?, ?, ?, 'IMPORTED', ?, ?, ?, ?) RETURNING id
+                """, businessId, fileName, "%064d".formatted(System.nanoTime()), saleIds.length, saleIds.length,
+                saleIds.length, new BigDecimal(totalAmount));
+        for (long saleId : saleIds) {
+            jdbc.update("UPDATE sales SET import_batch_id = ? WHERE id = ?", batchId, saleId);
+        }
+        return batchId;
+    }
+
+    public long count(String table) {
+        return jdbc.queryForObject("SELECT COUNT(*) FROM " + table, Long.class);
+    }
 }

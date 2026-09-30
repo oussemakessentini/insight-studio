@@ -14,6 +14,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.jayway.jsonpath.JsonPath;
 import com.oussamaksantini.insightstudio.PostgresIntegrationTest;
 import com.oussamaksantini.insightstudio.SqlFixture;
+import com.oussamaksantini.insightstudio.testsupport.TestAccounts;
 import java.math.BigDecimal;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
@@ -22,6 +23,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.web.context.WebApplicationContext;
 
 /**
  * Exercises the report endpoints against PostgreSQL with a small hand-built dataset.
@@ -54,6 +56,8 @@ class ReportApiIntegrationTest extends PostgresIntegrationTest {
     private static final String FORMULA_CATEGORY = "=SUM(A1,\"x\")";
 
     @Autowired
+    WebApplicationContext context;
+
     MockMvc mvc;
 
     @Autowired
@@ -69,6 +73,8 @@ class ReportApiIntegrationTest extends PostgresIntegrationTest {
         db.clear();
 
         long business = db.business("Test Co", "test-co", "EUR", "Europe/Paris");
+
+        mvc = TestAccounts.ownerMvc(context, jdbc, business);
         storeA = db.store(business, "A", "Alpha", "Paris");
         storeB = db.store(business, "B", "Bravo", "Lyon");
         long p1 = db.product(business, "P1", "Jacket", "Outerwear", "50.00");

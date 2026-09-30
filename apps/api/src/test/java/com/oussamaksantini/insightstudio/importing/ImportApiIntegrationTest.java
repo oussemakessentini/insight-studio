@@ -12,16 +12,16 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.jayway.jsonpath.JsonPath;
+import com.oussamaksantini.insightstudio.PostgresIntegrationTest;
 import com.oussamaksantini.insightstudio.SqlFixture;
+import com.oussamaksantini.insightstudio.testsupport.HttpApiClient;
+import com.oussamaksantini.insightstudio.testsupport.TestAccounts;
 import com.oussamaksantini.insightstudio.business.Business;
 import com.oussamaksantini.insightstudio.business.BusinessRepository;
 import com.oussamaksantini.insightstudio.importing.dto.ImportResult;
 import java.io.IOException;
 import java.io.InputStream;
 import java.math.BigDecimal;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.OffsetDateTime;
@@ -34,10 +34,11 @@ import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.web.context.WebApplicationContext;
 import org.springframework.test.web.servlet.ResultActions;
 
 /**
- * Import endpoints against PostgreSQL. The current business is "Test Co" (the first one created),
+ * Import endpoints against PostgreSQL, called by an OWNER of "Test Co",
  * time zone America/New_York (UTC-4 in September).
  * <pre>
  * Test Co:  stores BOS, WEB; products TEE-1, JNS-1; existing receipt R-EXIST at BOS (Aug 31)
@@ -50,12 +51,14 @@ import org.springframework.test.web.servlet.ResultActions;
  *                                           3 receipts, 4 lines             7   312.00
  * </pre>
  */
-class ImportApiIntegrationTest extends ImportIntegrationTest {
+class ImportApiIntegrationTest extends PostgresIntegrationTest {
 
     private static final String HEADER = "store_code,receipt_number,sold_at,sku,quantity,unit_price\n";
     private static final String PERIOD = "from=2026-08-25&to=2026-09-05";
 
     @Autowired
+    WebApplicationContext context;
+
     MockMvc mvc;
 
     @Autowired
@@ -82,6 +85,7 @@ class ImportApiIntegrationTest extends ImportIntegrationTest {
         SqlFixture db = new SqlFixture(jdbc);
         db.clear();
         business = db.business("Test Co", "test-co", "USD", "America/New_York");
+        mvc = TestAccounts.ownerMvc(context, jdbc, business);
         bos = db.store(business, "BOS", "Back Bay", "Boston");
         web = db.store(business, "WEB", "Online", null);
         tee = db.product(business, "TEE-1", "Tee", "Tops", "25.00");
@@ -429,21 +433,17 @@ class ImportApiIntegrationTest extends ImportIntegrationTest {
         String boundary = "----import-test-boundary";
         byte[] big = new byte[5 * 1024 * 1024 + 10_000];
         java.util.Arrays.fill(big, (byte) 'a');
-        byte[] head = ("--" + boundary + "\r\nContent-Disposition: form-data; name=\"file\"; filename=\"big.csv\"\r\n"
-                + "Content-Type: text/csv\r\n\r\n").getBytes(StandardCharsets.UTF_8);
-        byte[] tail = ("\r\n--" + boundary + "--\r\n").getBytes(StandardCharsets.UTF_8);
-        byte[] body = new byte[head.length + big.length + tail.length];
-        System.arraycopy(head, 0, body, 0, head.length);
-        System.arraycopy(big, 0, body, head.length, big.length);
-        System.arraycopy(tail, 0, body, head.length + big.length, tail.length);
+        byte[] body = HttpApiClient.multipartFile(boundary, "big.csv", big);
 
-        HttpRequest request = HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/api/imports?dryRun=false"))
-                .header("Content-Type", "multipart/form-data; boundary=" + boundary)
-                .header("Accept", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofByteArray(body))
-                .build();
-        try (HttpClient client = HttpClient.newHttpClient()) {
-            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+        try (HttpApiClient client = new HttpApiClient(port)) {
+            // A real signed-in session: the limit applies after authentication and CSRF checks.
+            client.get("/api/session");
+            HttpResponse<String> signIn = client.postJson("/api/auth/sign-in", """
+                    {"email": "owner-%d@example.com", "password": "%s"}
+                    """.formatted(business, TestAccounts.PASSWORD));
+            assertThat(signIn.statusCode()).as(signIn.body()).isEqualTo(200);
+            HttpResponse<String> response = client.postMultipart("/api/imports?dryRun=false", boundary, body,
+                    TestAccounts.BUSINESS_HEADER, Long.toString(business));
             assertThat(response.statusCode()).isEqualTo(413);
             assertThat(response.body()).contains("\"status\":413");
         }

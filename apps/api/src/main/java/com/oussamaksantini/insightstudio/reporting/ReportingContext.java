@@ -4,17 +4,22 @@ import com.oussamaksantini.insightstudio.business.Business;
 import com.oussamaksantini.insightstudio.business.BusinessRepository;
 import com.oussamaksantini.insightstudio.common.web.ApiException;
 import com.oussamaksantini.insightstudio.store.StoreRepository;
+import com.oussamaksantini.insightstudio.tenancy.BusinessAccess;
+import com.oussamaksantini.insightstudio.tenancy.CurrentBusiness;
+import com.oussamaksantini.insightstudio.tenancy.Role;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.util.Map;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Component;
-import org.springframework.util.StringUtils;
 
 /**
  * Resolves the business a report is about and turns raw request parameters into a validated
  * {@link ReportFilter}. Shared by the dashboard and product endpoints so filters behave identically.
+ *
+ * <p>The business always comes from {@link CurrentBusiness} (the caller's membership or the public
+ * demo), so every service that goes through this class is scoped to that business.
  */
 @Component
 public class ReportingContext {
@@ -27,29 +32,32 @@ public class ReportingContext {
     private final BusinessRepository businesses;
     private final StoreRepository stores;
     private final NamedParameterJdbcTemplate jdbc;
-    private final ReportingProperties properties;
+    private final CurrentBusiness current;
 
     ReportingContext(
             BusinessRepository businesses,
             StoreRepository stores,
             NamedParameterJdbcTemplate jdbc,
-            ReportingProperties properties) {
+            CurrentBusiness current) {
         this.businesses = businesses;
         this.stores = stores;
         this.jdbc = jdbc;
-        this.properties = properties;
+        this.current = current;
     }
 
-    /** The configured business, or the first one created when no slug is configured. */
+    /** The business this request may read (see {@link CurrentBusiness#require()}). */
     public Business currentBusiness() {
-        String slug = properties.businessSlug();
-        if (StringUtils.hasText(slug)) {
-            return businesses.findBySlug(slug)
-                    .orElseThrow(() -> ApiException.notFound("Business '%s' was not found.".formatted(slug)));
-        }
-        return businesses.findFirstByOrderByIdAsc()
-                .orElseThrow(() -> ApiException.notFound(
-                        "No business data found. Start the API with the 'demo' profile to load sample data."));
+        return load(current.require());
+    }
+
+    /** The business this request may change with at least {@code minimum} role. */
+    public Business currentBusiness(Role minimum) {
+        return load(current.require(minimum));
+    }
+
+    private Business load(BusinessAccess access) {
+        return businesses.findById(access.businessId())
+                .orElseThrow(() -> ApiException.notFound("Business not found."));
     }
 
     /**

@@ -10,6 +10,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.oussamaksantini.insightstudio.PostgresIntegrationTest;
 import com.oussamaksantini.insightstudio.SqlFixture;
+import com.oussamaksantini.insightstudio.testsupport.TestAccounts;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -17,6 +18,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.web.context.WebApplicationContext;
 
 /**
  * Exercises the dashboard endpoints against PostgreSQL with a small hand-built dataset whose
@@ -42,6 +44,8 @@ class DashboardApiIntegrationTest extends PostgresIntegrationTest {
     private static final String WINDOW = "from=2026-06-01&to=2026-06-02";
 
     @Autowired
+    WebApplicationContext context;
+
     MockMvc mvc;
 
     @Autowired
@@ -60,6 +64,8 @@ class DashboardApiIntegrationTest extends PostgresIntegrationTest {
         db.clear();
 
         long business = db.business("Test Co", "test-co", "EUR", "Europe/Paris");
+
+        mvc = TestAccounts.ownerMvc(context, jdbc, business);
         storeA = db.store(business, "A", "Alpha", "Paris");
         storeB = db.store(business, "B", "Bravo", "Lyon");
         storeC = db.store(business, "C", "Charlie", null);
@@ -92,7 +98,12 @@ class DashboardApiIntegrationTest extends PostgresIntegrationTest {
                 .andExpect(jsonPath("$.stores[2].city", nullValue()))
                 .andExpect(jsonPath("$.dataRange.from").value("2026-05-31"))
                 .andExpect(jsonPath("$.dataRange.to").value("2026-06-10"))
-                .andExpect(jsonPath("$.features.importsEnabled").value(false));
+                .andExpect(jsonPath("$.features").doesNotExist())
+                .andExpect(jsonPath("$.access.role").value("OWNER"))
+                .andExpect(jsonPath("$.access.canImport").value(true))
+                .andExpect(jsonPath("$.access.canManageCatalog").value(true))
+                .andExpect(jsonPath("$.access.canManageMembers").value(true))
+                .andExpect(jsonPath("$.access.readOnly").value(false));
     }
 
     @Test
@@ -247,12 +258,13 @@ class DashboardApiIntegrationTest extends PostgresIntegrationTest {
         }
 
         @Test
-        void returnsNotFoundWhenThereIsNoBusiness() throws Exception {
+        void signedOutOnceTheAccountIsGone() throws Exception {
+            // The session's user no longer exists: the session is dropped and nothing is served.
             jdbc.execute(TRUNCATE_ALL);
             mvc.perform(get("/api/dashboard/context"))
-                    .andExpect(status().isNotFound())
-                    .andExpect(jsonPath("$.detail").value(
-                            "No business data found. Start the API with the 'demo' profile to load sample data."));
+                    .andExpect(status().isUnauthorized())
+                    .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                    .andExpect(jsonPath("$.detail").value("Sign in to continue."));
         }
     }
 }

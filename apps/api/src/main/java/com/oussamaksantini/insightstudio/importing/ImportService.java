@@ -1,7 +1,6 @@
 package com.oussamaksantini.insightstudio.importing;
 
 import com.oussamaksantini.insightstudio.business.Business;
-import com.oussamaksantini.insightstudio.common.ImportsProperties;
 import com.oussamaksantini.insightstudio.common.web.ApiException;
 import com.oussamaksantini.insightstudio.importing.CsvParser.CsvRecord;
 import com.oussamaksantini.insightstudio.importing.CsvParser.CsvSyntaxException;
@@ -15,6 +14,7 @@ import com.oussamaksantini.insightstudio.importing.dto.ImportError;
 import com.oussamaksantini.insightstudio.importing.dto.ImportListResponse;
 import com.oussamaksantini.insightstudio.importing.dto.ImportResult;
 import com.oussamaksantini.insightstudio.reporting.ReportingContext;
+import com.oussamaksantini.insightstudio.tenancy.Role;
 import java.math.BigDecimal;
 import java.nio.ByteBuffer;
 import java.nio.charset.CharacterCodingException;
@@ -27,7 +27,6 @@ import java.util.List;
 import java.util.Locale;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -35,11 +34,10 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * Validates CSV files of historical sales and imports them all-or-nothing into the current
- * business. A dry run and a rejected file never write anything. Exists only when imports are
- * enabled ({@value ImportsProperties#ENABLED_PROPERTY}), which only the {@code local} profile does.
+ * business. A dry run and a rejected file never write anything. Every public method requires
+ * the ADMIN role (or OWNER) in the current business.
  */
 @Service
-@ConditionalOnProperty(name = ImportsProperties.ENABLED_PROPERTY, havingValue = "true")
 public class ImportService {
 
     private static final Logger log = LoggerFactory.getLogger(ImportService.class);
@@ -65,7 +63,7 @@ public class ImportService {
 
     /** Validates {@code content} and, unless {@code dryRun}, imports it into the current business. */
     public ImportResult importFile(String originalFileName, byte[] content, boolean dryRun) {
-        return importFile(reporting.currentBusiness(), originalFileName, content, dryRun);
+        return importFile(reporting.currentBusiness(Role.ADMIN), originalFileName, content, dryRun);
     }
 
     /**
@@ -108,7 +106,7 @@ public class ImportService {
     }
 
     public ImportListResponse list(int page, int size) {
-        long businessId = reporting.currentBusiness().getId();
+        long businessId = reporting.currentBusiness(Role.ADMIN).getId();
         return readOnly.execute(status -> {
             long total = queries.countBatches(businessId);
             long offset = (long) page * size;
@@ -119,7 +117,7 @@ public class ImportService {
     }
 
     public ImportDetailResponse detail(long batchId) {
-        long businessId = reporting.currentBusiness().getId();
+        long businessId = reporting.currentBusiness(Role.ADMIN).getId();
         return readOnly.execute(status -> queries.detail(batchId, businessId))
                 .orElseThrow(() -> ApiException.notFound("Import %d was not found.".formatted(batchId)));
     }

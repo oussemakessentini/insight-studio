@@ -1,12 +1,11 @@
 package com.oussamaksantini.insightstudio.dashboard;
 
 import com.oussamaksantini.insightstudio.business.Business;
-import com.oussamaksantini.insightstudio.common.ImportsProperties;
 import com.oussamaksantini.insightstudio.dashboard.DashboardQueries.RevenueBucket;
 import com.oussamaksantini.insightstudio.dashboard.DashboardQueries.Totals;
 import com.oussamaksantini.insightstudio.dashboard.dto.DashboardContextResponse;
 import com.oussamaksantini.insightstudio.dashboard.dto.DashboardContextResponse.BusinessInfo;
-import com.oussamaksantini.insightstudio.dashboard.dto.DashboardContextResponse.Features;
+import com.oussamaksantini.insightstudio.dashboard.dto.DashboardContextResponse.Access;
 import com.oussamaksantini.insightstudio.dashboard.dto.RecentSalesResponse;
 import com.oussamaksantini.insightstudio.dashboard.dto.RevenueSeriesResponse;
 import com.oussamaksantini.insightstudio.dashboard.dto.RevenueSeriesResponse.Point;
@@ -21,6 +20,9 @@ import com.oussamaksantini.insightstudio.reporting.ReportCalculations;
 import com.oussamaksantini.insightstudio.reporting.ReportFilter;
 import com.oussamaksantini.insightstudio.reporting.ReportingContext;
 import com.oussamaksantini.insightstudio.store.StoreRepository;
+import com.oussamaksantini.insightstudio.tenancy.BusinessAccess;
+import com.oussamaksantini.insightstudio.tenancy.CurrentBusiness;
+import com.oussamaksantini.insightstudio.tenancy.Role;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
@@ -37,14 +39,14 @@ public class DashboardService {
     private final ReportingContext reporting;
     private final StoreRepository stores;
     private final DashboardQueries queries;
-    private final ImportsProperties imports;
+    private final CurrentBusiness current;
 
     DashboardService(
-            ReportingContext reporting, StoreRepository stores, DashboardQueries queries, ImportsProperties imports) {
+            ReportingContext reporting, StoreRepository stores, DashboardQueries queries, CurrentBusiness current) {
         this.reporting = reporting;
         this.stores = stores;
         this.queries = queries;
-        this.imports = imports;
+        this.current = current;
     }
 
     public DashboardContextResponse context() {
@@ -56,7 +58,15 @@ public class DashboardService {
                 new BusinessInfo(business.getName(), business.getSlug(), business.getCurrency(), business.getTimeZone()),
                 storeOptions,
                 reporting.saleDateRange(business.getId(), business.zoneId()),
-                new Features(imports.enabled()));
+                access(current.require()));
+    }
+
+    static Access access(BusinessAccess access) {
+        if (access.demo()) {
+            return new Access("DEMO", false, false, false, true);
+        }
+        boolean admin = access.role().atLeast(Role.ADMIN);
+        return new Access(access.role().name(), admin, admin, admin, !admin);
     }
 
     public SummaryResponse summary(LocalDate from, LocalDate to, Long storeId) {

@@ -2,7 +2,9 @@ package com.oussamaksantini.insightstudio.store;
 
 import com.oussamaksantini.insightstudio.dashboard.dto.RevenueSeriesResponse;
 import com.oussamaksantini.insightstudio.dashboard.dto.TopProductsResponse;
+import com.oussamaksantini.insightstudio.store.dto.CreateStoreRequest;
 import com.oussamaksantini.insightstudio.store.dto.StoreDetailResponse;
+import com.oussamaksantini.insightstudio.store.dto.StoreInfo;
 import com.oussamaksantini.insightstudio.store.dto.StoreListResponse;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -10,15 +12,20 @@ import jakarta.validation.constraints.Positive;
 import java.time.LocalDate;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.format.annotation.DateTimeFormat.ISO;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Read-only per-store performance. Date parameters behave exactly as on the dashboard endpoints;
- * the store comes from the path, so there is no {@code storeId} parameter.
+ * Per-store performance. Date parameters behave exactly as on the dashboard endpoints; the store
+ * comes from the path, so there is no {@code storeId} parameter. {@code POST} adds a store to the
+ * current business (ADMIN or OWNER).
  */
 @RestController
 @RequestMapping("/api/stores")
@@ -35,6 +42,12 @@ class StoreController {
             @RequestParam(required = false) @DateTimeFormat(iso = ISO.DATE) LocalDate from,
             @RequestParam(required = false) @DateTimeFormat(iso = ISO.DATE) LocalDate to) {
         return storeService.list(from, to);
+    }
+
+    @PostMapping
+    ResponseEntity<StoreInfo> create(@RequestBody CreateStoreRequest body) {
+        StoreInfo store = storeService.create(body.code(), body.name(), body.city());
+        return ResponseEntity.status(HttpStatus.CREATED).body(store);
     }
 
     @GetMapping("/{storeId}")

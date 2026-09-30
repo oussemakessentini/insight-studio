@@ -8,6 +8,7 @@ import com.oussamaksantini.insightstudio.reporting.ReportCalculations;
 import com.oussamaksantini.insightstudio.reporting.ReportFilter;
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Optional;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -98,5 +99,20 @@ class StoreQueries {
                 ReportCalculations.money(rs.getBigDecimal("revenue")),
                 rs.getLong("units"),
                 rs.getLong("orders")));
+    }
+
+    /** Inserts a store into the business unless the code is taken there; empty on a conflict. */
+    Optional<Long> insertStore(long businessId, String code, String name, String city) {
+        return jdbc.queryForList("""
+                INSERT INTO stores (business_id, code, name, city) VALUES (:businessId, :code, :name, :city)
+                ON CONFLICT (business_id, code) DO NOTHING
+                RETURNING id
+                """,
+                new MapSqlParameterSource()
+                        .addValue("businessId", businessId)
+                        .addValue("code", code)
+                        .addValue("name", name)
+                        .addValue("city", city),
+                Long.class).stream().findFirst();
     }
 }
