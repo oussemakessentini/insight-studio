@@ -9,7 +9,7 @@ import type { PageProps } from './types'
  * CSV import of historical sales: validate a file (dry run), import it all-or-nothing, and browse
  * earlier imports. Only reachable when the API has imports enabled (local development).
  */
-export function ImportsPage({ context, onFiltersChange, href }: PageProps) {
+export function ImportsPage({ context, onFiltersChange, href, refreshContext }: PageProps) {
   const { business } = context
   const [historyPage, setHistoryPage] = useState(0)
   const [historyVersion, setHistoryVersion] = useState(0)
@@ -18,6 +18,8 @@ export function ImportsPage({ context, onFiltersChange, href }: PageProps) {
     // Show the new import at the top of the history.
     setHistoryPage(0)
     setHistoryVersion((v) => v + 1)
+    // Imported sales can extend the data range; refresh it so date presets include the new dates.
+    refreshContext()
   }
 
   return (

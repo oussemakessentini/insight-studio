@@ -26,7 +26,8 @@ function App() {
   const route = matchRoute(usePathname())
 
   if (context.data) {
-    return <Workspace context={context.data} route={route} />
+    // While a refresh is in flight the previous context stays on screen (useApi keeps the last data).
+    return <Workspace context={context.data} route={route} refreshContext={context.retry} />
   }
   return (
     <Shell active={sectionOf(route)} hrefs={sectionHrefs((path) => path)} importsEnabled={false}>
@@ -46,11 +47,22 @@ function App() {
  * Owns the store/date filters shared by every page. They live in the URL so views can be
  * bookmarked, and survive navigation because this component stays mounted across routes.
  */
-function Workspace({ context, route }: { context: DashboardContext; route: Route }) {
-  // Browser back/forward re-reads the filters recorded in the restored history entry. In-app
-  // links carry the filters in their href, so the URL and this state never disagree.
+function Workspace({
+  context,
+  route,
+  refreshContext,
+}: {
+  context: DashboardContext
+  route: Route
+  refreshContext: () => void
+}) {
+  // Filters are re-read from the URL (which always mirrors them) when:
+  // - the browser goes back/forward, restoring that history entry's filters;
+  // - the data range changes (e.g. after an import), so relative presets such as "Last 30 days",
+  //   which end on the last day with data, extend to the new dates. Custom ranges are kept.
   const historyVersion = useHistoryVersion()
-  const [filters, setFilterState] = useStateResetOn<Filters>(String(historyVersion), fromUrl(context))
+  const resetKey = `${historyVersion}|${context.dataRange?.from ?? ''}|${context.dataRange?.to ?? ''}`
+  const [filters, setFilterState] = useStateResetOn<Filters>(resetKey, fromUrl(context))
 
   const setFilters = useCallback(
     (next: Filters) => {
@@ -65,7 +77,7 @@ function Workspace({ context, route }: { context: DashboardContext; route: Route
   useEffect(() => normalizeUrl(), [])
 
   const href = useCallback((path: string) => withFilters(path, filters), [filters])
-  const pageProps: PageProps = { context, filters, onFiltersChange: setFilters, href }
+  const pageProps: PageProps = { context, filters, onFiltersChange: setFilters, href, refreshContext }
 
   return (
     <Shell

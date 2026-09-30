@@ -9,6 +9,11 @@ export interface PageProps {
   onFiltersChange: (filters: Filters) => void
   /** Builds an in-app link that carries the current filters. */
   href: (path: string) => string
+  /**
+   * Re-fetches the business context (stores, data range, features), e.g. after an import adds
+   * sales. Relative date presets then extend to the new data range without a page reload.
+   */
+  refreshContext: () => void
 }
 
 export function apiFilter(filters: Filters): DashboardFilter {
