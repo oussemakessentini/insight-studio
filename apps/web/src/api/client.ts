@@ -30,7 +30,13 @@ export class ApiError extends Error {
 /** Query parameters; null, undefined and empty strings are omitted. */
 export type Params = Record<string, string | number | boolean | null | undefined>
 
-const UNREACHABLE = 'Could not reach the API. Check that it is running on port 8080.'
+/**
+ * Where API requests end up: the dev server's proxy target (API_PROXY_TARGET, set in vite.config)
+ * or, in a production build, this page's own /api address.
+ */
+export const API_LOCATION: string = __API_PROXY_TARGET__ ?? `${window.location.origin}/api`
+
+const UNREACHABLE = `Could not reach the API at ${API_LOCATION}. Check that it is running.`
 
 function withQuery(path: string, params: Params): string {
   const query = new URLSearchParams()
