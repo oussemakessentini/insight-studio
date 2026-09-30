@@ -14,14 +14,16 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class UserQueries {
 
-    private static final String COLUMNS = "id, email, password_hash, display_name, session_version";
+    private static final String COLUMNS =
+            "id, email, password_hash, display_name, session_version, email_verified_at IS NOT NULL AS email_verified";
 
     private static final RowMapper<UserRow> USER = (rs, i) -> new UserRow(
             rs.getLong("id"),
             rs.getString("email"),
             rs.getString("password_hash"),
             rs.getString("display_name"),
-            rs.getInt("session_version"));
+            rs.getInt("session_version"),
+            rs.getBoolean("email_verified"));
 
     private final NamedParameterJdbcTemplate jdbc;
 
@@ -29,7 +31,8 @@ public class UserQueries {
         this.jdbc = jdbc;
     }
 
-    public record UserRow(long id, String email, String passwordHash, String displayName, int sessionVersion) {
+    public record UserRow(
+            long id, String email, String passwordHash, String displayName, int sessionVersion, boolean emailVerified) {
     }
 
     public Optional<UserRow> findByEmail(String email) {
@@ -46,6 +49,43 @@ public class UserQueries {
     public Optional<Integer> sessionVersion(long id) {
         return jdbc.queryForList("SELECT session_version FROM users WHERE id = :id", Map.of("id", id), Integer.class)
                 .stream().findFirst();
+    }
+
+    public boolean isEmailVerified(long id) {
+        return Boolean.TRUE.equals(jdbc.queryForObject(
+                "SELECT EXISTS (SELECT 1 FROM users WHERE id = :id AND email_verified_at IS NOT NULL)",
+                Map.of("id", id), Boolean.class));
+    }
+
+    /** Marks the address verified; returns whether it was not verified before. */
+    boolean markEmailVerified(long id) {
+        return jdbc.update("UPDATE users SET email_verified_at = now() WHERE id = :id AND email_verified_at IS NULL",
+                Map.of("id", id)) == 1;
+    }
+
+    void insertVerificationToken(long userId, String tokenSha256, Instant expiresAt) {
+        jdbc.update("""
+                INSERT INTO email_verification_tokens (user_id, token_sha256, expires_at) VALUES (:userId, :sha, :expiresAt)
+                """,
+                new MapSqlParameterSource()
+                        .addValue("userId", userId)
+                        .addValue("sha", tokenSha256)
+                        .addValue("expiresAt", OffsetDateTime.ofInstant(expiresAt, ZoneOffset.UTC)));
+    }
+
+    /** Marks every unused verification token of the user as used, so at most the newest link works. */
+    void invalidateVerificationTokens(long userId) {
+        jdbc.update("UPDATE email_verification_tokens SET used_at = now() WHERE user_id = :userId AND used_at IS NULL",
+                Map.of("userId", userId));
+    }
+
+    /** Spends an unused, unexpired verification token and returns its user (atomically, like reset tokens). */
+    Optional<Long> consumeVerificationToken(String tokenSha256) {
+        return jdbc.queryForList("""
+                UPDATE email_verification_tokens SET used_at = now()
+                WHERE token_sha256 = :sha AND used_at IS NULL AND expires_at > now()
+                RETURNING user_id
+                """, Map.of("sha", tokenSha256), Long.class).stream().findFirst();
     }
 
     /** @throws org.springframework.dao.DuplicateKeyException when the email is taken */

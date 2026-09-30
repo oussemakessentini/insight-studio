@@ -15,6 +15,12 @@ class AccountConfiguration {
         return PasswordEncoderFactories.createDelegatingPasswordEncoder();
     }
 
+    /** Emails verification links through the mail outbox (Mailpit in development). */
+    @Bean
+    VerificationNotifier verificationNotifier(MailOutbox outbox) {
+        return new EmailVerificationNotifier(outbox);
+    }
+
     /** Emails reset links through the mail outbox (Mailpit in development). */
     @Bean
     PasswordResetNotifier passwordResetNotifier(MailOutbox outbox) {

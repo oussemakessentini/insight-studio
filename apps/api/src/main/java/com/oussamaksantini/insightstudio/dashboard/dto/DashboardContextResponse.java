@@ -21,9 +21,15 @@ public record DashboardContextResponse(
      * @param canImport CSV import and import history (ADMIN+)
      * @param canManageCatalog create stores and products (ADMIN+)
      * @param canManageMembers list and add members (ADMIN+; role changes need OWNER)
-     * @param readOnly nothing can be changed (VIEWER or public demo)
+     * @param readOnly nothing can be changed (VIEWER, public demo, or an unverified email address)
+     * @param emailVerified whether the signed-in account verified its address ({@code true} for the demo)
      */
     public record Access(
-            String role, boolean canImport, boolean canManageCatalog, boolean canManageMembers, boolean readOnly) {
+            String role,
+            boolean canImport,
+            boolean canManageCatalog,
+            boolean canManageMembers,
+            boolean readOnly,
+            boolean emailVerified) {
     }
 }

@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.jayway.jsonpath.JsonPath;
 import com.oussamaksantini.insightstudio.PostgresIntegrationTest;
 import com.oussamaksantini.insightstudio.SqlFixture;
+import com.oussamaksantini.insightstudio.testsupport.CapturingVerificationNotifier;
 import com.oussamaksantini.insightstudio.testsupport.HttpApiClient;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
@@ -29,6 +30,18 @@ class AuthFlowIntegrationTest extends PostgresIntegrationTest {
 
     @Autowired
     JdbcTemplate jdbc;
+
+    @Autowired
+    CapturingVerificationNotifier verificationMail;
+
+    /** Opens the emailed verification link (as the account's owner would, in any browser). */
+    private void verifyEmail(String email) throws Exception {
+        try (HttpApiClient mailbox = new HttpApiClient(port)) {
+            mailbox.get("/api/session");
+            expect(mailbox.postJson("/api/auth/verify-email",
+                    "{\"token\":\"%s\"}".formatted(verificationMail.sentTo(email).getLast().token())), 204);
+        }
+    }
 
     @BeforeEach
     void clean() {
@@ -67,6 +80,9 @@ class AuthFlowIntegrationTest extends PostgresIntegrationTest {
             assertThat((Boolean) JsonPath.read(me.body(), "$.authenticated")).isTrue();
             assertThat((String) JsonPath.read(me.body(), "$.user.displayName")).isEqualTo("Olive Owner");
 
+            // Until the address is verified, no business can be created.
+            expect(client.postJson("/api/businesses", "{\"name\":\"X\",\"currency\":\"EUR\",\"timeZone\":\"UTC\"}"), 403);
+            verifyEmail("Owner@Example.com");
             HttpResponse<String> created = client.postJson("/api/businesses", """
                     {"name": "Olive's Shop", "currency": "eur", "timeZone": "Europe/Paris"}
                     """);
@@ -125,6 +141,7 @@ class AuthFlowIntegrationTest extends PostgresIntegrationTest {
             client.get("/api/session");
             expect(client.postJson("/api/auth/sign-up",
                     "{\"email\":\"a@example.com\",\"password\":\"%s\",\"displayName\":\"A\"}".formatted(PASSWORD)), 201);
+            verifyEmail("a@example.com");
             expect(client.postJson("/api/businesses", "{\"name\":\"Shop\",\"currency\":\"USD\",\"timeZone\":\"UTC\"}"), 201);
             String first = client.cookie(HttpApiClient.SESSION_COOKIE);
             Map<String, String> firstCookies = client.cookies();

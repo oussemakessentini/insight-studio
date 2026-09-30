@@ -28,6 +28,11 @@ public record RateLimit(String name, int max, Duration window) {
     /** Invitation previews and acceptances from one client IP. */
     public static final RateLimit INVITATION_TOKEN_PER_IP = new RateLimit("invite-token:ip", 30, Duration.ofMinutes(15));
 
+    /** Verification emails requested by one account (resends). */
+    public static final RateLimit VERIFICATION_EMAILS_PER_ACCOUNT = new RateLimit("verify-email:account", 3, Duration.ofHours(1));
+    /** Verification-token attempts from one client IP. */
+    public static final RateLimit VERIFICATION_TOKEN_PER_IP = new RateLimit("verify-token:ip", 30, Duration.ofMinutes(15));
+
     public RateLimit {
         if (max < 1 || window.isNegative() || window.isZero() || window.compareTo(RateLimiter.RETENTION) > 0) {
             throw new IllegalArgumentException("Invalid rate limit " + name);

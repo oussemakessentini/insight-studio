@@ -52,6 +52,12 @@ public final class HttpApiClient implements AutoCloseable {
         return send(builder, csrfToken());
     }
 
+    /** PATCHes JSON with the CSRF header. */
+    public HttpResponse<String> patchJson(String path, String json) throws IOException, InterruptedException {
+        return send(request(path).header("Content-Type", "application/json")
+                .method("PATCH", HttpRequest.BodyPublishers.ofString(json)), csrfToken());
+    }
+
     /** DELETEs with the CSRF header. */
     public HttpResponse<String> delete(String path) throws IOException, InterruptedException {
         return send(request(path).DELETE(), csrfToken());

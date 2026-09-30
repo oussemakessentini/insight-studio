@@ -2,6 +2,7 @@ package com.oussamaksantini.insightstudio.business;
 
 import com.oussamaksantini.insightstudio.account.AccountPrincipal;
 import com.oussamaksantini.insightstudio.account.AccountProperties;
+import com.oussamaksantini.insightstudio.account.EmailVerificationService;
 import com.oussamaksantini.insightstudio.account.UserQueries;
 import com.oussamaksantini.insightstudio.business.InvitationQueries.InvitationRow;
 import com.oussamaksantini.insightstudio.business.dto.BusinessResponse;
@@ -65,6 +66,7 @@ public class InvitationService {
     private final AccountProperties links;
     private final RateLimiter limits;
     private final TransactionTemplate transactions;
+    private final EmailVerificationService verification;
     private final SecureRandom random = new SecureRandom();
 
     InvitationService(
@@ -75,7 +77,8 @@ public class InvitationService {
             InvitationNotifier notifier,
             AccountProperties links,
             RateLimiter limits,
-            TransactionTemplate transactions) {
+            TransactionTemplate transactions,
+            EmailVerificationService verification) {
         this.invitations = invitations;
         this.businesses = businesses;
         this.memberships = memberships;
@@ -84,6 +87,7 @@ public class InvitationService {
         this.links = links;
         this.limits = limits;
         this.transactions = transactions;
+        this.verification = verification;
     }
 
     /** ADMIN+: the business's open invitations. */
@@ -99,6 +103,7 @@ public class InvitationService {
      */
     public InvitationResponse invite(AccountPrincipal caller, long businessId, String email, String roleName) {
         Role callerRole = requireRole(caller, businessId, Role.ADMIN);
+        verification.requireVerified(caller.userId());
         Role role = parseRole(roleName);
         if (role == Role.OWNER && callerRole != Role.OWNER) {
             throw ApiException.forbidden("You need the OWNER role for this.");
@@ -130,6 +135,7 @@ public class InvitationService {
     /** ADMIN+: revokes an open invitation; revoking an OWNER invitation needs OWNER. */
     public void revoke(AccountPrincipal caller, long businessId, long invitationId) {
         Role callerRole = requireRole(caller, businessId, Role.ADMIN);
+        verification.requireVerified(caller.userId());
         InvitationRow invitation = invitations.find(businessId, invitationId)
                 .filter(InvitationRow::open)
                 .orElseThrow(() -> ApiException.notFound("Invitation not found."));
@@ -167,6 +173,8 @@ public class InvitationService {
                 throw ApiException.conflict("You're already a member of this business.");
             }
             invitations.markAccepted(invitation.id(), user.id());
+            // The invitation was emailed to this address: accepting it proves the address works.
+            verification.verifiedByEmailLink(user.id());
             return memberships.forUser(user.id()).stream()
                     .filter(m -> m.businessId() == invitation.businessId())
                     .map(m -> new BusinessResponse(m.businessId(), m.name(), m.slug(), m.currency(), m.timeZone(), m.role()))

@@ -15,7 +15,8 @@ public interface CurrentBusiness {
 
     /**
      * Like {@link #require()}, and additionally requires a write-capable role of at least
-     * {@code minimum}: 403 for a weaker role or for the read-only public demo.
+     * {@code minimum}: 403 for a weaker role, for the read-only public demo, and for an account
+     * whose email address is not verified.
      */
     BusinessAccess require(Role minimum);
 }

@@ -44,7 +44,16 @@ public final class TestAccounts {
     public record TestUser(long id, String email, int sessionVersion) {
     }
 
+    /** A user whose email address is verified (like every account before verification existed). */
     public TestUser user(String email) {
+        long id = jdbc.queryForObject(
+                "INSERT INTO users (email, password_hash, display_name, email_verified_at) VALUES (?, ?, ?, now()) RETURNING id",
+                Long.class, email, PASSWORD_HASH, email.substring(0, email.indexOf('@')));
+        return new TestUser(id, email, 0);
+    }
+
+    /** A user who has not verified their email address yet. */
+    public TestUser unverifiedUser(String email) {
         long id = jdbc.queryForObject(
                 "INSERT INTO users (email, password_hash, display_name) VALUES (?, ?, ?) RETURNING id",
                 Long.class, email, PASSWORD_HASH, email.substring(0, email.indexOf('@')));

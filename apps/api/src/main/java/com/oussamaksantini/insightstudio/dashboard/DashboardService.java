@@ -63,10 +63,11 @@ public class DashboardService {
 
     static Access access(BusinessAccess access) {
         if (access.demo()) {
-            return new Access("DEMO", false, false, false, true);
+            return new Access("DEMO", false, false, false, true, true);
         }
-        boolean admin = access.role().atLeast(Role.ADMIN);
-        return new Access(access.role().name(), admin, admin, admin, !admin);
+        // Until the address is verified nothing can be changed, whatever the role.
+        boolean admin = access.role().atLeast(Role.ADMIN) && access.emailVerified();
+        return new Access(access.role().name(), admin, admin, admin, !admin, access.emailVerified());
     }
 
     public SummaryResponse summary(LocalDate from, LocalDate to, Long storeId) {

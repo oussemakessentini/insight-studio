@@ -9,6 +9,7 @@ import com.oussamaksantini.insightstudio.account.dto.ResetPasswordRequest;
 import com.oussamaksantini.insightstudio.account.dto.SignInRequest;
 import com.oussamaksantini.insightstudio.account.dto.SignUpRequest;
 import com.oussamaksantini.insightstudio.account.dto.UserInfo;
+import com.oussamaksantini.insightstudio.account.dto.VerifyEmailRequest;
 import com.oussamaksantini.insightstudio.common.web.ApiException;
 import com.oussamaksantini.insightstudio.security.SessionAuthentication;
 import com.oussamaksantini.insightstudio.tenancy.Memberships;
@@ -33,11 +34,17 @@ class AuthController {
     private final AccountService accounts;
     private final Memberships memberships;
     private final SessionAuthentication sessions;
+    private final EmailVerificationService verification;
 
-    AuthController(AccountService accounts, Memberships memberships, SessionAuthentication sessions) {
+    AuthController(
+            AccountService accounts,
+            Memberships memberships,
+            SessionAuthentication sessions,
+            EmailVerificationService verification) {
         this.accounts = accounts;
         this.memberships = memberships;
         this.sessions = sessions;
+        this.verification = verification;
     }
 
     @PostMapping("/sign-up")
@@ -84,6 +91,22 @@ class AuthController {
         return ResponseEntity.noContent().build();
     }
 
+    /** Public: the link may be opened in any browser. Verifies the account the token was sent to. */
+    @PostMapping("/verify-email")
+    ResponseEntity<Void> verifyEmail(@RequestBody VerifyEmailRequest body, HttpServletRequest request) {
+        verification.verify(body.token(), request.getRemoteAddr());
+        return ResponseEntity.noContent().build();
+    }
+
+    /** Signed in: emails a new verification link (nothing for an already verified account). */
+    @PostMapping("/verify-email/resend")
+    ResponseEntity<Void> resendVerification() {
+        AccountPrincipal principal = CurrentAccount.get()
+                .orElseThrow(() -> ApiException.unauthorized("Sign in to continue."));
+        verification.resend(principal);
+        return ResponseEntity.accepted().build();
+    }
+
     private List<MembershipInfo> memberships(long userId) {
         return memberships.forUser(userId).stream()
                 .map(m -> new MembershipInfo(m.businessId(), m.name(), m.slug(), m.role()))
@@ -95,6 +118,6 @@ class AuthController {
     }
 
     static UserInfo info(UserRow user) {
-        return new UserInfo(user.id(), user.email(), user.displayName());
+        return new UserInfo(user.id(), user.email(), user.displayName(), user.emailVerified());
     }
 }

@@ -16,6 +16,12 @@ public class TestSupportConfiguration {
 
     @Bean
     @Primary
+    CapturingVerificationNotifier capturingVerificationNotifier() {
+        return new CapturingVerificationNotifier();
+    }
+
+    @Bean
+    @Primary
     CapturingInvitationNotifier capturingInvitationNotifier() {
         return new CapturingInvitationNotifier();
     }

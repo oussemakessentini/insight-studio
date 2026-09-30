@@ -2,6 +2,8 @@ package com.oussamaksantini.insightstudio.tenancy;
 
 import com.oussamaksantini.insightstudio.account.AccountPrincipal;
 import com.oussamaksantini.insightstudio.account.CurrentAccount;
+import com.oussamaksantini.insightstudio.account.EmailVerificationService;
+import com.oussamaksantini.insightstudio.account.UserQueries;
 import com.oussamaksantini.insightstudio.common.web.ApiException;
 import com.oussamaksantini.insightstudio.tenancy.Memberships.MembershipView;
 import com.oussamaksantini.insightstudio.tenancy.PublicDemo.DemoBusiness;
@@ -38,10 +40,12 @@ class MembershipCurrentBusiness implements CurrentBusiness {
 
     private final Memberships memberships;
     private final PublicDemo demo;
+    private final UserQueries users;
 
-    MembershipCurrentBusiness(Memberships memberships, PublicDemo demo) {
+    MembershipCurrentBusiness(Memberships memberships, PublicDemo demo, UserQueries users) {
         this.memberships = memberships;
         this.demo = demo;
+        this.users = users;
     }
 
     @Override
@@ -67,6 +71,9 @@ class MembershipCurrentBusiness implements CurrentBusiness {
         if (!access.role().atLeast(minimum)) {
             throw ApiException.forbidden("You need the %s role for this.".formatted(minimum));
         }
+        if (!access.emailVerified()) {
+            throw ApiException.forbidden(EmailVerificationService.VERIFY_FIRST);
+        }
         return access;
     }
 
@@ -75,7 +82,7 @@ class MembershipCurrentBusiness implements CurrentBusiness {
         if (header != null) {
             long businessId = parseId(header).orElseThrow(() -> ApiException.notFound(NOT_FOUND));
             Role role = memberships.role(userId, businessId).orElseThrow(() -> ApiException.notFound(NOT_FOUND));
-            return new BusinessAccess(businessId, role, false, userId);
+            return new BusinessAccess(businessId, role, false, userId, users.isEmailVerified(userId));
         }
         List<MembershipView> all = memberships.forUser(userId);
         if (all.isEmpty()) {
@@ -85,7 +92,7 @@ class MembershipCurrentBusiness implements CurrentBusiness {
             throw ApiException.badRequest("Select a business (X-Business-Id).");
         }
         MembershipView only = all.getFirst();
-        return new BusinessAccess(only.businessId(), only.role(), false, userId);
+        return new BusinessAccess(only.businessId(), only.role(), false, userId, users.isEmailVerified(userId));
     }
 
     private BusinessAccess forAnonymous(String header) {
@@ -93,7 +100,7 @@ class MembershipCurrentBusiness implements CurrentBusiness {
         if (header != null && parseId(header).filter(id -> id == business.businessId()).isEmpty()) {
             throw ApiException.unauthorized(SIGN_IN);
         }
-        return new BusinessAccess(business.businessId(), Role.VIEWER, true, null);
+        return new BusinessAccess(business.businessId(), Role.VIEWER, true, null, true);
     }
 
     private static Optional<Long> parseId(String value) {

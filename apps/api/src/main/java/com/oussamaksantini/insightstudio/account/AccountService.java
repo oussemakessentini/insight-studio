@@ -47,6 +47,7 @@ public class AccountService {
     private final RateLimiter limits;
     private final TransactionTemplate transactions;
     private final PasswordResetNotifier notifier;
+    private final EmailVerificationService verification;
     private final AccountProperties properties;
     private final SecureRandom random = new SecureRandom();
     /** Verified against for unknown emails, so they take as long as a wrong password. */
@@ -58,12 +59,14 @@ public class AccountService {
             RateLimiter limits,
             TransactionTemplate transactions,
             PasswordResetNotifier notifier,
+            EmailVerificationService verification,
             AccountProperties properties) {
         this.users = users;
         this.encoder = encoder;
         this.limits = limits;
         this.transactions = transactions;
         this.notifier = notifier;
+        this.verification = verification;
         this.properties = properties;
         this.dummyHash = encoder.encode("not-a-real-password-" + random.nextLong());
     }
@@ -87,6 +90,8 @@ public class AccountService {
             id = transactions.execute(status -> {
                 long created = users.insert(cleanEmail, hash, cleanName);
                 users.recordSignIn(created);
+                // New accounts start unverified, with a link to verify on its way.
+                verification.issue(users.findById(created).orElseThrow());
                 return created;
             });
         } catch (DuplicateKeyException e) {
@@ -203,6 +208,8 @@ public class AccountService {
             PasswordPolicy.check(newPassword, owner.email());
             users.updatePassword(userId, hash);
             users.invalidateResetTokens(userId);
+            // The reset link was emailed to the address: using it proves the address works.
+            verification.verifiedByEmailLink(userId);
             return owner;
         });
         // The owner proved control of the mailbox: earlier failed sign-ins no longer count.

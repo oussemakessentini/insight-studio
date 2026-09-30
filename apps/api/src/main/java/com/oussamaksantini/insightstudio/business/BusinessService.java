@@ -1,6 +1,7 @@
 package com.oussamaksantini.insightstudio.business;
 
 import com.oussamaksantini.insightstudio.account.AccountPrincipal;
+import com.oussamaksantini.insightstudio.account.EmailVerificationService;
 import com.oussamaksantini.insightstudio.business.BusinessQueries.MemberRow;
 import com.oussamaksantini.insightstudio.business.dto.BusinessResponse;
 import com.oussamaksantini.insightstudio.business.dto.MemberResponse;
@@ -42,17 +43,20 @@ public class BusinessService {
     private final BusinessRepository businesses;
     private final Memberships memberships;
     private final PublicDemo demo;
+    private final EmailVerificationService verification;
     private final SecureRandom random = new SecureRandom();
 
     BusinessService(
             BusinessQueries queries,
             BusinessRepository businesses,
             Memberships memberships,
-            PublicDemo demo) {
+            PublicDemo demo,
+            EmailVerificationService verification) {
         this.queries = queries;
         this.businesses = businesses;
         this.memberships = memberships;
         this.demo = demo;
+        this.verification = verification;
     }
 
     @Transactional(readOnly = true)
@@ -65,6 +69,7 @@ public class BusinessService {
     /** Creates a business owned by the caller. The slug comes from the name and is unique. */
     @Transactional
     public BusinessResponse create(AccountPrincipal caller, String name, String currency, String timeZone) {
+        verification.requireVerified(caller.userId());
         String cleanName = checkName(name);
         String cleanCurrency = checkCurrency(currency);
         String cleanZone = checkTimeZone(timeZone);
@@ -90,6 +95,7 @@ public class BusinessService {
     @Transactional
     public BusinessResponse update(AccountPrincipal caller, long businessId, String name, String timeZone) {
         requireRole(caller, businessId, Role.OWNER);
+        verification.requireVerified(caller.userId());
         if (name == null && timeZone == null) {
             throw ApiException.badRequest("Nothing to update: send 'name' and/or 'timeZone'.");
         }
@@ -111,6 +117,7 @@ public class BusinessService {
     @Transactional
     public MemberResponse changeRole(AccountPrincipal caller, long businessId, long userId, String roleName) {
         requireRole(caller, businessId, Role.OWNER);
+        verification.requireVerified(caller.userId());
         Role role = parseRole(roleName);
         queries.lockBusiness(businessId);
         MemberRow target = queries.member(businessId, userId).orElseThrow(() -> ApiException.notFound(MEMBER_NOT_FOUND));
@@ -132,6 +139,10 @@ public class BusinessService {
         boolean self = userId == caller.userId();
         if (!self && !callerRole.atLeast(Role.ADMIN)) {
             throw ApiException.forbidden("You need the ADMIN role for this.");
+        }
+        // Leaving is always allowed; removing someone else is a change to the business.
+        if (!self) {
+            verification.requireVerified(caller.userId());
         }
         queries.lockBusiness(businessId);
         MemberRow target = queries.member(businessId, userId).orElseThrow(() -> ApiException.notFound(MEMBER_NOT_FOUND));
