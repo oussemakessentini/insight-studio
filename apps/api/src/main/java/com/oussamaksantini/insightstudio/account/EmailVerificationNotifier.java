@@ -28,4 +28,21 @@ class EmailVerificationNotifier implements VerificationNotifier {
                 Insight Studio
                 """.formatted(displayName, EmailVerificationService.TOKEN_LIFETIME.toHours(), link), expiresAt);
     }
+
+    @Override
+    public void sendExistingAccountNotice(String email, String displayName, String signInLink, String resetLink) {
+        outbox.enqueue("existing account", email, "You already have an Insight Studio account", """
+                Hello %s,
+
+                Someone (hopefully you) tried to create an Insight Studio account with this email
+                address, but it already has one. Nothing about your account was changed.
+
+                Sign in: %s
+                Forgot your password? Choose a new one: %s
+
+                If this wasn't you, you can ignore this email.
+
+                Insight Studio
+                """.formatted(displayName, signInLink, resetLink), null);
+    }
 }

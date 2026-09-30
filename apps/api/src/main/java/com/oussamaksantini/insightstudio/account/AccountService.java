@@ -72,33 +72,49 @@ public class AccountService {
     }
 
     /**
-     * Creates an account. 400 for invalid input, 409 when the email already has an account, 429
-     * after too many attempts from the client IP (every attempt counts, so the 409 cannot be used
-     * to test many emails for an account).
+     * Handles a sign-up so that the caller cannot tell whether the address already had an account:
+     * after validation (400) and the per-IP limit (429), every sign-up does the same work and gets
+     * the same answer, and nobody is signed in.
+     *
+     * <ul>
+     *   <li>New address: an unverified account is created and a verification link emailed.</li>
+     *   <li>Existing address: the account is left exactly as it is (password, name, verification,
+     *       sessions); its owner is emailed a notice with sign-in and reset links, at most
+     *       {@link RateLimit#SIGN_UP_NOTICES_PER_ADDRESS} times an hour.</li>
+     * </ul>
      */
-    public UserRow signUp(String email, String password, String displayName, String clientIp) {
+    public void signUp(String email, String password, String displayName, String clientIp) {
         limits.acquire(RateLimit.SIGN_UP_PER_IP, clientIp);
         String cleanEmail = checkEmail(email);
         String cleanName = checkDisplayName(displayName);
         PasswordPolicy.check(password, cleanEmail);
-        if (users.findByEmail(cleanEmail).isPresent()) {
-            throw ApiException.conflict("An account with this email already exists.");
-        }
+        // Hashed in both cases, so an existing address does not answer faster.
         String hash = encoder.encode(password);
-        long id;
+        boolean noticeAllowed = limits.tryAcquire(RateLimit.SIGN_UP_NOTICES_PER_ADDRESS, cleanEmail);
+        Optional<UserRow> existing = users.findByEmail(cleanEmail);
+        if (existing.isPresent()) {
+            notifyExisting(existing.get(), noticeAllowed);
+            return;
+        }
         try {
-            id = transactions.execute(status -> {
+            long id = transactions.execute(status -> {
                 long created = users.insert(cleanEmail, hash, cleanName);
-                users.recordSignIn(created);
                 // New accounts start unverified, with a link to verify on its way.
                 verification.issue(users.findById(created).orElseThrow());
                 return created;
             });
+            log.info("Account {} created.", id);
         } catch (DuplicateKeyException e) {
-            throw ApiException.conflict("An account with this email already exists.");
+            // Created concurrently by another sign-up: the same as an existing address.
+            users.findByEmail(cleanEmail).ifPresent(user -> notifyExisting(user, noticeAllowed));
         }
-        log.info("Account {} created.", id);
-        return users.findById(id).orElseThrow();
+    }
+
+    private void notifyExisting(UserRow user, boolean noticeAllowed) {
+        if (noticeAllowed) {
+            transactions.executeWithoutResult(status -> verification.noticeExistingAccount(user));
+        }
+        log.info("Sign-up attempted for existing account {}; account unchanged.", user.id());
     }
 
     /**

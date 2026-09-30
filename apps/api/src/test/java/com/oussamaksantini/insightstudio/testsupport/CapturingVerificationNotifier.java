@@ -16,10 +16,21 @@ public class CapturingVerificationNotifier implements VerificationNotifier {
     }
 
     private final List<Sent> sent = new CopyOnWriteArrayList<>();
+    private final List<String> notices = new CopyOnWriteArrayList<>();
 
     @Override
     public void sendVerificationLink(String email, String displayName, String link, Instant expiresAt) {
         sent.add(new Sent(email, link, expiresAt));
+    }
+
+    @Override
+    public void sendExistingAccountNotice(String email, String displayName, String signInLink, String resetLink) {
+        notices.add(email);
+    }
+
+    /** Addresses told "you already have an account". */
+    public List<String> notices() {
+        return List.copyOf(notices);
     }
 
     public List<Sent> sent() {
@@ -36,5 +47,6 @@ public class CapturingVerificationNotifier implements VerificationNotifier {
 
     public void clear() {
         sent.clear();
+        notices.clear();
     }
 }

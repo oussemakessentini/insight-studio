@@ -291,12 +291,17 @@ class InvitationIntegrationTest extends PostgresIntegrationTest {
                 expect(preview(browser, token), 200);
                 expect(browser.postJson("/api/auth/sign-up",
                         "{\"email\":\"brand-new@example.com\",\"password\":\"%s\",\"displayName\":\"New\"}"
-                                .formatted(TestAccounts.PASSWORD)), 201);
+                                .formatted(TestAccounts.PASSWORD)), 202);
+                // Not verified yet: signing in with the new password works, and the invitation,
+                // sent to this address, verifies it on acceptance.
+                expect(browser.postJson("/api/auth/sign-in",
+                        "{\"email\":\"brand-new@example.com\",\"password\":\"%s\"}".formatted(TestAccounts.PASSWORD)), 200);
                 HttpResponse<String> joined = accept(browser, token);
                 expect(joined, 200);
                 assertThat((String) JsonPath.read(joined.body(), "$.name")).isEqualTo("Alpha Co");
                 HttpResponse<String> session = browser.get("/api/session");
                 assertThat((List<String>) JsonPath.read(session.body(), "$.memberships[*].role")).containsExactly("VIEWER");
+                assertThat((Boolean) JsonPath.read(session.body(), "$.user.emailVerified")).isTrue();
             }
         }
 

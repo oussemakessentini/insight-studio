@@ -68,10 +68,20 @@ class AuthFlowIntegrationTest extends PostgresIntegrationTest {
             HttpResponse<String> signUp = client.postJson("/api/auth/sign-up", """
                     {"email": " Owner@Example.com ", "password": "%s", "displayName": "Olive Owner"}
                     """.formatted(PASSWORD));
-            expect(signUp, 201);
-            assertThat((String) JsonPath.read(signUp.body(), "$.user.email")).isEqualTo("Owner@Example.com");
-            assertThat((List<?>) JsonPath.read(signUp.body(), "$.memberships")).isEmpty();
-            assertThat(signUp.headers().allValues("Set-Cookie")).anySatisfy(c ->
+            // Sign-up answers the same for every address and signs no one in.
+            expect(signUp, 202);
+            assertThat(signUp.body()).isEmpty();
+            assertThat(signUp.headers().allValues("Set-Cookie")).isEmpty();
+            assertThat(client.cookie(HttpApiClient.SESSION_COOKIE)).isNull();
+            expect(client.get("/api/businesses"), 401);
+
+            HttpResponse<String> signIn = client.postJson("/api/auth/sign-in",
+                    "{\"email\":\"owner@example.com\",\"password\":\"%s\"}".formatted(PASSWORD));
+            expect(signIn, 200);
+            assertThat((String) JsonPath.read(signIn.body(), "$.user.email")).isEqualTo("Owner@Example.com");
+            assertThat((Boolean) JsonPath.read(signIn.body(), "$.user.emailVerified")).isFalse();
+            assertThat((List<?>) JsonPath.read(signIn.body(), "$.memberships")).isEmpty();
+            assertThat(signIn.headers().allValues("Set-Cookie")).anySatisfy(c ->
                     assertThat(c).startsWith(HttpApiClient.SESSION_COOKIE + "=").containsIgnoringCase("HttpOnly").containsIgnoringCase("SameSite=Lax"));
             assertThat(client.cookie(HttpApiClient.SESSION_COOKIE)).isNotBlank();
             assertThat(client.csrfToken()).as("CSRF token rotated on sign-in").isNotEqualTo(anonymousToken);
@@ -140,8 +150,10 @@ class AuthFlowIntegrationTest extends PostgresIntegrationTest {
         try (HttpApiClient client = new HttpApiClient(port)) {
             client.get("/api/session");
             expect(client.postJson("/api/auth/sign-up",
-                    "{\"email\":\"a@example.com\",\"password\":\"%s\",\"displayName\":\"A\"}".formatted(PASSWORD)), 201);
+                    "{\"email\":\"a@example.com\",\"password\":\"%s\",\"displayName\":\"A\"}".formatted(PASSWORD)), 202);
             verifyEmail("a@example.com");
+            expect(client.postJson("/api/auth/sign-in",
+                    "{\"email\":\"a@example.com\",\"password\":\"%s\"}".formatted(PASSWORD)), 200);
             expect(client.postJson("/api/businesses", "{\"name\":\"Shop\",\"currency\":\"USD\",\"timeZone\":\"UTC\"}"), 201);
             String first = client.cookie(HttpApiClient.SESSION_COOKIE);
             Map<String, String> firstCookies = client.cookies();

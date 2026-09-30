@@ -67,6 +67,11 @@ public class EmailVerificationService {
         notifier.sendVerificationLink(user.email(), user.displayName(), links.link("/verify-email", token), expiresAt);
     }
 
+    /** Emails the owner of an existing account that someone tried to sign up with its address. */
+    void noticeExistingAccount(UserRow user) {
+        notifier.sendExistingAccountNotice(user.email(), user.displayName(), links.page("/sign-in"), links.page("/forgot-password"));
+    }
+
     /**
      * Verifies the address the token was sent to. Public: the link may be opened in any browser,
      * signed in as anyone (or no one); only the token's own account is verified. 400 for an unknown,

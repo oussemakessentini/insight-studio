@@ -28,6 +28,8 @@ public record RateLimit(String name, int max, Duration window) {
     /** Invitation previews and acceptances from one client IP. */
     public static final RateLimit INVITATION_TOKEN_PER_IP = new RateLimit("invite-token:ip", 30, Duration.ofMinutes(15));
 
+    /** "You already have an account" notices to one address; further sign-ups send nothing. */
+    public static final RateLimit SIGN_UP_NOTICES_PER_ADDRESS = new RateLimit("sign-up-notice:email", 3, Duration.ofHours(1));
     /** Verification emails requested by one account (resends). */
     public static final RateLimit VERIFICATION_EMAILS_PER_ACCOUNT = new RateLimit("verify-email:account", 3, Duration.ofHours(1));
     /** Verification-token attempts from one client IP. */

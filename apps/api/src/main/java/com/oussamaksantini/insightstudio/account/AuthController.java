@@ -16,7 +16,6 @@ import com.oussamaksantini.insightstudio.tenancy.Memberships;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.util.List;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -47,12 +46,15 @@ class AuthController {
         this.verification = verification;
     }
 
+    /**
+     * Always {@code 202} with no body once the input is valid, whether or not the address already
+     * has an account (see {@link AccountService#signUp}); the new account signs in after verifying,
+     * or right away with its password.
+     */
     @PostMapping("/sign-up")
-    ResponseEntity<AccountResponse> signUp(
-            @RequestBody SignUpRequest body, HttpServletRequest request, HttpServletResponse response) {
-        UserRow user = accounts.signUp(body.email(), body.password(), body.displayName(), request.getRemoteAddr());
-        sessions.signIn(principal(user), request, response);
-        return ResponseEntity.status(HttpStatus.CREATED).body(new AccountResponse(info(user), List.of()));
+    ResponseEntity<Void> signUp(@RequestBody SignUpRequest body, HttpServletRequest request) {
+        accounts.signUp(body.email(), body.password(), body.displayName(), request.getRemoteAddr());
+        return ResponseEntity.accepted().build();
     }
 
     @PostMapping("/sign-in")

@@ -31,6 +31,11 @@ public record AccountProperties(@DefaultValue("http://localhost:5173") String we
         return webBaseUrl.startsWith("https://");
     }
 
+    /** A link to {@code page} (e.g. {@code /sign-in}) of the web app. */
+    public String page(String page) {
+        return webBaseUrl + page;
+    }
+
     /** A link to {@code page} (e.g. {@code /reset-password}) carrying {@code token}. */
     public String link(String page, String token) {
         return webBaseUrl + page + "?token=" + token;

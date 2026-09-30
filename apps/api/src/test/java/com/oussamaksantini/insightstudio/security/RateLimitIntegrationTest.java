@@ -90,12 +90,12 @@ class RateLimitIntegrationTest extends PostgresIntegrationTest {
     void signUpIsLimitedPerIpCountingEveryAttempt() throws Exception {
         int max = RateLimit.SIGN_UP_PER_IP.max();
         try (HttpApiClient client = browser()) {
-            expect(signUp(client, "first@example.com"), 201);
-            // Invalid attempts and "already exists" answers count too: probing emails costs attempts.
-            expect(signUp(client, EMAIL), 409);
+            expect(signUp(client, "first@example.com"), 202);
+            // Invalid attempts and existing addresses count too: probing emails costs attempts.
+            expect(signUp(client, EMAIL), 202);
             expect(signUp(client, "not-an-email"), 400);
             for (int i = 3; i < max; i++) {
-                expect(signUp(client, EMAIL.toUpperCase()), 409);
+                expect(signUp(client, EMAIL.toUpperCase()), 202);
             }
             expectLimited(signUp(client, "new@example.com"), RateLimit.SIGN_UP_PER_IP);
         }

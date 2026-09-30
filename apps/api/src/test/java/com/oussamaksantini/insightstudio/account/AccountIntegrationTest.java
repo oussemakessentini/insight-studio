@@ -7,6 +7,7 @@ import com.oussamaksantini.insightstudio.PostgresIntegrationTest;
 import com.oussamaksantini.insightstudio.SqlFixture;
 import com.oussamaksantini.insightstudio.security.RateLimit;
 import com.oussamaksantini.insightstudio.testsupport.CapturingPasswordResetNotifier;
+import com.oussamaksantini.insightstudio.testsupport.CapturingVerificationNotifier;
 import com.oussamaksantini.insightstudio.testsupport.HttpApiClient;
 import com.oussamaksantini.insightstudio.testsupport.TestAccounts;
 import java.net.http.HttpResponse;
@@ -35,11 +36,15 @@ class AccountIntegrationTest extends PostgresIntegrationTest {
     @Autowired
     CapturingPasswordResetNotifier notifier;
 
+    @Autowired
+    CapturingVerificationNotifier verificationMail;
+
     @BeforeEach
     void clean() {
         new SqlFixture(jdbc).clear();
         new TestAccounts(jdbc).user(EMAIL);
         notifier.clear();
+        verificationMail.clear();
     }
 
     private HttpApiClient browser() throws Exception {
@@ -90,13 +95,49 @@ class AccountIntegrationTest extends PostgresIntegrationTest {
         }
 
         @Test
-        void duplicateEmailIsAConflictIgnoringCase() throws Exception {
+        void signingUpWithAnExistingAddressLooksLikeANewSignUpAndChangesNothing() throws Exception {
+            java.util.Map<String, Object> before = jdbc.queryForMap("SELECT * FROM users WHERE email = ?", EMAIL);
+            HttpResponse<String> existing;
+            HttpResponse<String> fresh;
             try (HttpApiClient client = browser()) {
-                HttpResponse<String> response = client.postJson("/api/auth/sign-up",
-                        "{\"email\":\" USER@example.COM \",\"password\":\"long enough password\",\"displayName\":\"X\"}");
-                expect(response, 409);
+                existing = client.postJson("/api/auth/sign-up",
+                        "{\"email\":\" USER@example.COM \",\"password\":\"another long password\",\"displayName\":\"Evil\"}");
+                fresh = client.postJson("/api/auth/sign-up",
+                        "{\"email\":\"fresh@example.com\",\"password\":\"another long password\",\"displayName\":\"Fresh\"}");
                 expect(client.get("/api/businesses"), 401);
             }
+            // The same status, body and headers (no cookie, no session) either way.
+            expect(existing, 202);
+            expect(fresh, 202);
+            assertThat(existing.body()).isEqualTo(fresh.body()).isEmpty();
+            assertThat(existing.headers().map().keySet()).isEqualTo(fresh.headers().map().keySet());
+            assertThat(existing.headers().allValues("Set-Cookie")).isEmpty();
+
+            // The existing account is untouched: password, name, verification, session version.
+            assertThat(jdbc.queryForMap("SELECT * FROM users WHERE email = ?", EMAIL)).isEqualTo(before);
+            assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM users WHERE lower(email) = 'user@example.com'", Long.class))
+                    .isEqualTo(1);
+            try (HttpApiClient client = browser()) {
+                expect(signIn(client, EMAIL, TestAccounts.PASSWORD), 200);
+            }
+            try (HttpApiClient client = browser()) {
+                expect(signIn(client, EMAIL, "another long password"), 401);
+            }
+            // Its owner is told; the new address gets a verification link instead.
+            assertThat(verificationMail.notices()).containsExactly(EMAIL);
+            assertThat(verificationMail.sent()).extracting(CapturingVerificationNotifier.Sent::email)
+                    .containsExactly("fresh@example.com");
+        }
+
+        @Test
+        void existingAccountNoticesAreLimitedPerAddress() throws Exception {
+            try (HttpApiClient client = browser()) {
+                for (int i = 0; i < RateLimit.SIGN_UP_NOTICES_PER_ADDRESS.max() + 2; i++) {
+                    expect(client.postJson("/api/auth/sign-up",
+                            "{\"email\":\"%s\",\"password\":\"long enough password\",\"displayName\":\"X\"}".formatted(EMAIL)), 202);
+                }
+            }
+            assertThat(verificationMail.notices()).hasSize(RateLimit.SIGN_UP_NOTICES_PER_ADDRESS.max());
         }
 
         @Test

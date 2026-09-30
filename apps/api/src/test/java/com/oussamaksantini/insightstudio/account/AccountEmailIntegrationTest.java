@@ -134,7 +134,9 @@ class AccountEmailIntegrationTest extends PostgresIntegrationTest {
             invitee.get("/api/session");
             assertThat(invitee.postJson("/api/auth/sign-up",
                     "{\"email\":\"new.person@example.com\",\"password\":\"%s\",\"displayName\":\"New\"}"
-                            .formatted(TestAccounts.PASSWORD)).statusCode()).isEqualTo(201);
+                            .formatted(TestAccounts.PASSWORD)).statusCode()).isEqualTo(202);
+            assertThat(invitee.postJson("/api/auth/sign-in", "{\"email\":\"new.person@example.com\",\"password\":\"%s\"}"
+                    .formatted(TestAccounts.PASSWORD)).statusCode()).isEqualTo(200);
             assertThat(invitee.postJson("/api/invitations/accept", "{\"token\":\"%s\"}".formatted(token)).statusCode())
                     .isEqualTo(200);
         }
@@ -147,6 +149,40 @@ class AccountEmailIntegrationTest extends PostgresIntegrationTest {
                 .doesNotContain(token)
                 .doesNotContain("invite?token")
                 .doesNotContain("new.person@example.com");
+    }
+
+    @Test
+    void signUpEmailsArriveBySmtpAndNeverRevealWhetherAnAccountExisted(CapturedOutput output) throws Exception {
+        Pattern verifyLink = Pattern.compile("https://app\\.example\\.com/verify-email\\?token=([A-Za-z0-9_-]{43})");
+        String token;
+        try (ApiInstance api = ApiInstance.start(database, deployedLike(mailpit)); HttpApiClient client = api.client()) {
+            client.get("/api/session");
+            int fresh = client.postJson("/api/auth/sign-up",
+                    "{\"email\":\"fresh@example.com\",\"password\":\"%s\",\"displayName\":\"Fresh\"}"
+                            .formatted(TestAccounts.PASSWORD)).statusCode();
+            int existing = client.postJson("/api/auth/sign-up",
+                    "{\"email\":\"%s\",\"password\":\"%s\",\"displayName\":\"Other\"}"
+                            .formatted(EMAIL, TestAccounts.PASSWORD)).statusCode();
+            assertThat(fresh).isEqualTo(202).isEqualTo(existing);
+
+            List<Mailpit.Message> messages = mailpit.awaitMessages(2);
+            Mailpit.Message verify = messages.stream().filter(m -> m.to().equals("fresh@example.com")).findFirst().orElseThrow();
+            Mailpit.Message notice = messages.stream().filter(m -> m.to().equals(EMAIL)).findFirst().orElseThrow();
+            assertThat(verify.subject()).isEqualTo("Verify your email for Insight Studio");
+            Matcher link = verifyLink.matcher(verify.text());
+            assertThat(link.find()).as("verification link in %s", verify.text()).isTrue();
+            token = link.group(1);
+            assertThat(notice.subject()).isEqualTo("You already have an Insight Studio account");
+            assertThat(notice.text()).contains("https://app.example.com/sign-in").contains("https://app.example.com/forgot-password")
+                    .doesNotContain("token=");
+
+            assertThat(client.postJson("/api/auth/verify-email", "{\"token\":\"%s\"}".formatted(token)).statusCode())
+                    .isEqualTo(204);
+        }
+        assertThat(jdbc.queryForObject("SELECT email_verified_at IS NOT NULL FROM users WHERE email = 'fresh@example.com'",
+                Boolean.class)).isTrue();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM mail_outbox WHERE body IS NOT NULL", Long.class)).isZero();
+        assertThat(output.getAll()).doesNotContain(token).doesNotContain("verify-email?token");
     }
 
     @Test
