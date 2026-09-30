@@ -1,0 +1,4 @@
+# Cube Store data written in dev mode, and generated Playground files
+.cubestore/
+dashboard-app/
+node_modules/
