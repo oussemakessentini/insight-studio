@@ -1,7 +1,7 @@
 import { getJson, sendForm } from './client'
 
-// CSV import API. The endpoints exist only when the API runs with the `local` profile
-// (context.features.importsEnabled); otherwise they answer 404.
+// CSV import API: OWNER and ADMIN of a signed-in business (context.access.canImport); the API
+// answers 403 to viewers and to the read-only public demo.
 
 export type ImportStatus = 'VALIDATED' | 'IMPORTED' | 'REJECTED'
 

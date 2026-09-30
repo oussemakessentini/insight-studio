@@ -104,3 +104,38 @@ export const LogoMark = (p: IconProps) => (
     <path d="M9 22v-5M14 22V10M19 22v-8M24 22v-11" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" />
   </svg>
 )
+
+export const UsersIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <circle cx="9" cy="8" r="3.2" />
+    <path d="M3.5 19.5c.6-3 2.9-4.8 5.5-4.8s4.9 1.8 5.5 4.8" />
+    <path d="M15.5 5.2a3 3 0 0 1 0 5.6M17.2 14.9c1.8.6 3 2.2 3.3 4.6" />
+  </Icon>
+)
+
+export const BoxIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M12 3 20 7.5v9L12 21l-8-4.5v-9z" />
+    <path d="m4 7.5 8 4.5 8-4.5M12 12v9" />
+  </Icon>
+)
+
+export const UserIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <circle cx="12" cy="8" r="3.6" />
+    <path d="M5 20c.8-3.6 3.6-5.6 7-5.6s6.2 2 7 5.6" />
+  </Icon>
+)
+
+export const PlusIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M12 5v14M5 12h14" />
+  </Icon>
+)
+
+export const LockIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <rect x="5" y="10.5" width="14" height="10" rx="2" />
+    <path d="M8.5 10.5V7.5a3.5 3.5 0 0 1 7 0v3" />
+  </Icon>
+)

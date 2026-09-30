@@ -7,7 +7,7 @@ import type { PageProps } from './types'
 
 /**
  * CSV import of historical sales: validate a file (dry run), import it all-or-nothing, and browse
- * earlier imports. Only reachable when the API has imports enabled (local development).
+ * earlier imports. For OWNER and ADMIN (context.access.canImport); the API refuses everyone else.
  */
 export function ImportsPage({ context, onFiltersChange, href, refreshContext }: PageProps) {
   const { business } = context
@@ -27,12 +27,7 @@ export function ImportsPage({ context, onFiltersChange, href, refreshContext }: 
       <PageHeader
         eyebrow={business.name}
         title="Import sales"
-        subtitle={
-          <>
-            Load past receipts from a CSV file
-            <span className="page-subtitle-muted"> · Local development only</span>
-          </>
-        }
+        subtitle="Load past receipts from a CSV file"
       />
 
       <ImportUploader

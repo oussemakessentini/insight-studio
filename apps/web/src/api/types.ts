@@ -22,8 +22,22 @@ export interface DashboardContext {
   }
   stores: StoreOption[]
   dataRange: DateRange | null
-  /** Optional features enabled on this API; imports are off unless the local profile is active. */
-  features: { importsEnabled: boolean }
+  /** What the current user (or the anonymous demo visitor) may do in this business. */
+  access: BusinessAccess
+}
+
+export type Role = 'OWNER' | 'ADMIN' | 'VIEWER'
+
+/**
+ * Permissions for the resolved business (contract §4). The UI hides what isn't allowed as a
+ * convenience; the API enforces every check.
+ */
+export interface BusinessAccess {
+  role: Role | 'DEMO'
+  canImport: boolean
+  canManageCatalog: boolean
+  canManageMembers: boolean
+  readOnly: boolean
 }
 
 export interface MetricValue {
