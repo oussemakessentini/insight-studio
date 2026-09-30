@@ -158,3 +158,23 @@ readOnly }` for the resolved business.
 | **frontend** agent | `apps/web/**` (sole web writer) and `docs/frontend-accounts.md` |
 
 Docs: each agent writes `docs/<area>.md`; only the integrator edits `README.md`.
+
+## 9. As built (deviations from this contract)
+
+Recorded at integration; the code and [auth.md](auth.md) are authoritative.
+
+- **Password length:** 12 characters to **72 UTF-8 bytes** (bcrypt's input limit; longer input is
+  refused rather than silently truncated). The web form checks bytes, not characters.
+- **CSRF:** the token is accepted from the `X-XSRF-TOKEN` header only, never from a form field or
+  query parameter.
+- **Anonymous writes** to demo-readable paths (e.g. `POST /api/stores`) answer `401`, like every
+  other signed-out write.
+- **Public demo:** the demo business must have zero members; a business with members is never
+  served as the demo, and new businesses never receive the demo slug.
+- **`access.readOnly`** is `true` for VIEWERs as well as the public demo; the UI tells them apart by
+  `access.role` (`DEMO` only for the demo).
+- **Reset links:** built from `insight.accounts.reset-link-base` (`RESET_LINK_BASE`, default
+  `http://localhost:5173/reset-password`) and logged at INFO on the `insight.password-reset`
+  logger; no email is sent yet.
+- **Cube:** production mode needs its own **Cube Store** service (`cubestore` in the `analytics`
+  compose profile); Cube and Cube Store bind to `127.0.0.1` only.

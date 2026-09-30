@@ -4,9 +4,12 @@ A retail analytics dashboard for a multi-store clothing business. A Spring Boot 
 sales metrics from PostgreSQL; a React app presents revenue trends, store performance, top
 products and recent sales, plus a searchable product catalogue with per-product sales history,
 a sales register with receipt-level detail, per-store performance and monthly/category reports
-with CSV export. Date-range and store filters apply across every page. Sales can be loaded from
-CSV in local development, and an optional Cube semantic layer serves the same figures for
-analytics.
+with CSV export. Date-range and store filters apply across every page.
+
+People sign up, create businesses and invite existing accounts as owners, admins or viewers.
+Every request sees only the business its signed-in user is a member of; owners and admins can set
+up stores and products and import historical sales from CSV. An optional, private Cube semantic
+layer serves the same figures behind the API, and a read-only public demo can be switched on.
 
 The bundled demo business, **Fieldstone Apparel Co.**, and all of its stores, products and sales
 are fictional.
@@ -20,7 +23,7 @@ apps/
 infra/        Docker Compose for local PostgreSQL 16
 services/
   analytics/  Cube semantic layer (optional; reconciled against the API)
-docs/         feature notes: stores, reports, CSV import, analytics
+docs/         feature notes: accounts, stores, reports, CSV import, analytics
 ```
 
 ```
@@ -37,6 +40,8 @@ Browser ──> Vite dev server (:5173) ──/api proxy──> Spring Boot API 
 | `sales` | One receipt: store, receipt number, `sold_at` timestamp |
 | `sale_items` | Product, quantity and the **unit price actually charged** |
 | `import_batches` | CSV imports (V3): file name, content hash (unique per business), counts and total; imported sales point to their batch through `sales.import_batch_id` |
+| `users`, `business_memberships` | Accounts (V4): email, bcrypt hash, session version; one role (OWNER, ADMIN, VIEWER) per user and business |
+| `password_reset_tokens` | Recovery (V4): SHA-256 of a single-use token, 30-minute expiry |
 
 Revenue is always `SUM(quantity × sale_items.unit_price)`, so historical revenue is unaffected when
 a product's list price changes. Days, weeks and months are bucketed in the business's time zone.
@@ -49,6 +54,9 @@ a product's list price changes. Days, weeks and months are bucketed in the busin
 - The `reporting` package holds what the dashboard, product, sales, store and report endpoints share: business
   resolution, date/store filter defaults and validation, SQL filter fragments and bucket math, so
   filters behave identically everywhere.
+- The business comes from the signed-in user's membership (`tenancy.CurrentBusiness`), never from
+  a client-supplied id alone; writes also check the member's role. See
+  [docs/auth.md](docs/auth.md).
 - User input never reaches SQL text: sort columns and date buckets come from enums, and search
   terms are bound parameters with `LIKE` wildcards escaped.
 - Responses are Java records (DTOs); JPA entities are never serialized.
@@ -79,7 +87,16 @@ a product's list price changes. Days, weeks and months are bucketed in the busin
 | `/stores` | Every store's revenue, share, change vs the previous period, orders, units and average order value, with an all-stores total |
 | `/stores/{id}` | Store: metrics vs the previous period, revenue trend, category mix and top products. Store pages ignore the global store filter |
 | `/reports` | Monthly and Categories reports (tab kept in the URL) with totals rows that equal the dashboard, partial months marked, and CSV export |
-| `/imports`, `/imports/{id}` | CSV import (local development only): validate (dry run) with a line-by-line error table, import, and history. Hidden unless imports are enabled |
+| `/imports`, `/imports/{id}` | CSV import (owners and admins): validate (dry run) with a line-by-line error table, import, and history |
+| `/sign-in`, `/sign-up`, `/forgot-password`, `/reset-password` | Accounts and recovery |
+| `/businesses/new` | Create a business (shown after sign-up when you have none); the sidebar switches between your businesses |
+| `/settings/catalog` | Add stores and products (owners and admins) |
+| `/settings/members` | Members and roles (owners and admins) |
+| `/account` | Profile, password change and sign-out |
+
+Signed-out visitors see the read-only demo when it is enabled, otherwise the sign-in page. Viewers
+and the demo don't see Import, Catalog or Members. Frontend details:
+[docs/frontend-accounts.md](docs/frontend-accounts.md).
 
 **Orders, items and units:** an *order* is a receipt with at least one line item. The schema
 allows a receipt without items, but it has no revenue or units, so it is left out of every list,
@@ -136,18 +153,24 @@ npm install
 npm run dev
 ```
 
-**Optional: CSV import** (local development only). Imports write data through endpoints without
-authentication, so they are off by default and exist only with the `local` profile:
+**4. First account.** Open http://localhost:5173/sign-up, create an account (passwords are 12 to
+72 characters), then create a business; you become its owner. Add stores and products under
+Catalog, then import sales under Import. With the `demo` profile, signed-out visitors browse the
+demo business read-only; without it they are sent to sign in.
 
-```bat
-cd apps\api
-.\mvnw.cmd spring-boot:run -Dspring-boot.run.profiles=demo,local
-```
+Forgotten-password emails are not sent yet: the reset link is written to the API log at INFO
+(logger `insight.password-reset`). Account settings:
 
-Never activate `local` in a deployed environment. File format, rules and a sample file:
-[docs/csv-import.md](docs/csv-import.md) and [docs/sample-import.csv](docs/sample-import.csv).
+| Environment variable | Default | Purpose |
+|---|---|---|
+| `COOKIE_SECURE` | `false` | Mark session and CSRF cookies `Secure`; set `true` wherever the app is served over HTTPS |
+| `RESET_LINK_BASE` | `http://localhost:5173/reset-password` | Web page that reset links point to |
 
-**Optional: Cube analytics** (http://localhost:4000, dev mode, local use only). Set
+**CSV import** is available to owners and admins of their own business, never to the public demo.
+File format, rules and a sample file: [docs/csv-import.md](docs/csv-import.md) and
+[docs/sample-import.csv](docs/sample-import.csv).
+
+**Optional: Cube analytics** (private; production mode, bound to `127.0.0.1:4000`). Set
 `CUBEJS_API_SECRET` in `infra\.env` (see `infra\.env.example`), then:
 
 ```bat
@@ -155,8 +178,10 @@ cd infra
 docker compose --profile analytics up -d
 ```
 
-Plain `docker compose up -d` still starts only PostgreSQL. Model, measures and the
-reconciliation script: [docs/analytics.md](docs/analytics.md).
+and start the API with `INSIGHT_CUBE_URL=http://localhost:4000`. The browser never talks to Cube:
+the API signs a 60-second token carrying the member's business id, and Cube adds that business
+filter to every query. Plain `docker compose up -d` still starts only PostgreSQL. Model, security
+and the reconciliation script: [docs/analytics.md](docs/analytics.md).
 
 ## Demo data
 
@@ -174,6 +199,9 @@ asserts this.
   pins the exact counts and revenue total.
 - **Idempotent:** if the demo business (`fieldstone-apparel`) already exists, seeding is skipped,
   so restarting never duplicates data.
+- **Public and read-only:** the profile also sets `insight.demo.public=true`, so signed-out
+  visitors can read (never write to) the demo business. The demo business has no members; a
+  business with members is never served as the demo.
 
 To reload from scratch, remove the database volume. **This deletes all local data.**
 
@@ -185,7 +213,23 @@ docker compose up -d
 
 ## API
 
-All endpoints are `GET` and read-only. Common query parameters:
+**Authentication.** Sessions use an HttpOnly `JSESSIONID` cookie. Every `POST`, `PATCH` and
+`DELETE` needs the `X-XSRF-TOKEN` header copied from the `XSRF-TOKEN` cookie (issued by
+`GET /api/session`). Signed-in users with several businesses choose one with `X-Business-Id`; the
+server checks the membership and answers `404` for any business they don't belong to. Signed-out
+requests get the public demo when it is enabled, otherwise `401`. Full rules, role matrix and a
+curl walkthrough: [docs/auth.md](docs/auth.md).
+
+| Account endpoint | Does |
+|---|---|
+| `GET /api/session` | Current user, memberships and demo info; issues the CSRF cookie |
+| `POST /api/auth/sign-up`, `/sign-in`, `/sign-out` | Accounts and sessions (sign-in is rate limited) |
+| `POST /api/auth/password/change`, `/password/forgot`, `/password/reset` | Password change and recovery (single-use tokens, 30 minutes) |
+| `GET`, `POST /api/businesses`; `PATCH /api/businesses/{id}` | Your businesses; create one (you become OWNER); rename (OWNER) |
+| `/api/businesses/{id}/members[/{userId}]` | List, add, change role, remove (owners and admins, with last-owner protection) |
+| `POST /api/stores`, `POST /api/products` | Create stores and products (OWNER or ADMIN) |
+
+The reporting endpoints below are `GET` and read-only. Common query parameters:
 
 | Parameter | Format | Default |
 |---|---|---|
@@ -253,12 +297,17 @@ belonging to other businesses return `404`.
 
 Details: [docs/stores.md](docs/stores.md), [docs/reports.md](docs/reports.md).
 
-**CSV import** (only with `insight.imports.enabled=true`, i.e. the `local` profile; otherwise these
-paths return `404`): `POST /api/imports` (multipart `file`, `dryRun` default `true`) returns
-`VALIDATED`, `IMPORTED` or `REJECTED` with counts, total and line-level errors; `GET /api/imports`
-and `/api/imports/{id}` list and show batches. Imports are all-or-nothing, never overwrite an
-existing receipt, and reject a file already imported into the same business (by content hash).
-The dashboard context reports `features.importsEnabled`. See [docs/csv-import.md](docs/csv-import.md).
+**CSV import** (OWNER or ADMIN; viewers get `403`, signed-out visitors `401`): `POST /api/imports`
+(multipart `file`, `dryRun` default `true`) returns `VALIDATED`, `IMPORTED` or `REJECTED` with
+counts, total and line-level errors; `GET /api/imports` and `/api/imports/{id}` list and show
+batches. Imports are all-or-nothing, never overwrite an existing receipt, and reject a file
+already imported into the same business (by content hash). The dashboard context reports what the
+caller may do in `access` (`role`, `canImport`, `canManageCatalog`, `canManageMembers`,
+`readOnly`). See [docs/csv-import.md](docs/csv-import.md).
+
+**Analytics** (`GET /api/analytics/summary`): the same summary figures served by Cube for the
+member's business; `503` when `INSIGHT_CUBE_URL` is not set, `502` if Cube fails. See
+[docs/analytics.md](docs/analytics.md).
 
 Example error:
 
@@ -292,30 +341,41 @@ running. They do not touch your local database. The tests cover:
 - stores and reports: every figure reconciles with the dashboard summary for the same filters;
   month boundaries in the business time zone; CSV quoting and formula-injection escaping
 - CSV import: parser edge cases, every validation rule, business-scoped duplicate receipts and
-  file hashes, dry runs and rejected files write nothing, atomic writes, dashboard and Sales
-  figures moving by exactly the imported totals, and import endpoints absent by default
+  file hashes, dry runs and rejected files write nothing, atomic writes, and dashboard and Sales
+  figures moving by exactly the imported totals
+- accounts: sign-up, sign-in, sign-out, rate limits, password change and recovery (single-use,
+  expiring tokens that end existing sessions), CSRF and session fixation
+- roles: every endpoint against OWNER, ADMIN, VIEWER, the public demo and signed-out callers,
+  including last-owner protection
+- business isolation: two businesses with their own members; neither can read or modify the
+  other's dashboard, products, sales, stores, reports, imports, members or analytics, whatever
+  ids or `X-Business-Id` they send
+- Cube: tokens carry only the member's business, and Cube is never called for a refused request
+  (plus `node --test` in `services/analytics` for the Cube-side filter)
 - validation and error responses
-- the demo seeder
+- the demo seeder and the public demo switch
 
 ## Roadmap
 
-**Done in the latest phase (first iterations):**
+**Done:**
 
 - Stores: per-store performance list and store detail pages
 - Reports: on-demand monthly and category reports with CSV export
-- CSV import of sales data, available only in local development (`local` profile)
-- Cube analytics service in `services/analytics` (semantic layer and daily pre-aggregations),
-  reconciled against the API but not yet used by the app
+- Accounts, businesses and roles (owner, admin, viewer) with server-side authorization and
+  business isolation on every endpoint; password recovery
+- CSV import for owners and admins of their own business (never the public demo)
+- Private Cube analytics behind the API, scoped to the member's business
 
 **Later:**
 
+- Email delivery for password resets and invitations (links are only logged today)
+- Shared session and rate-limit storage (both are in memory, per API instance)
+- Business settings UI (rename, time zone)
 - Saved reports (named, reusable report definitions)
-- Cube integration in the API and dashboard (querying Cube instead of SQL, with access control,
-  per-business scoping and production mode instead of dev mode)
+- Dashboard panels served from Cube
 - Forecasting in `services/analytics`
 - Per-store breakdown on the product page
 - Product mix over time
-- Authentication and multi-business (tenant) isolation; required before imports can be enabled
-  outside local development
 - Export of dashboard views (PDF)
+- Billing
 - Deployment (containerized API + static web build)
