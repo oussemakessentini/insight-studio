@@ -1,0 +1,93 @@
+# One row per order: a receipt (sales row) with at least one line item.
+# The inner join on sale_items drops receipts without items, matching the API's
+# definition (apps/api/.../reporting/ReportSql.java), so every measure agrees with it.
+cubes:
+  - name: orders
+    title: Orders
+    description: Receipts with at least one line item, with their totals at the prices charged.
+    sql: >
+      SELECT s.id,
+             s.store_id,
+             s.receipt_number,
+             s.sold_at,
+             SUM(si.quantity)                 AS units,
+             SUM(si.quantity * si.unit_price) AS revenue
+      FROM sales s
+      JOIN sale_items si ON si.sale_id = s.id
+      GROUP BY s.id, s.store_id, s.receipt_number, s.sold_at
+
+    joins:
+      - name: stores
+        relationship: many_to_one
+        sql: "{CUBE}.store_id = {stores}.id"
+
+    dimensions:
+      - name: id
+        sql: id
+        type: number
+        primary_key: true
+        public: true
+
+      - name: receipt_number
+        sql: receipt_number
+        type: string
+
+      - name: store_id
+        sql: store_id
+        type: number
+
+      - name: sold_at
+        title: Sold at
+        description: Sale timestamp; day/week/month buckets follow the query's timezone.
+        sql: sold_at
+        type: time
+
+    measures:
+      - name: count
+        title: Orders
+        description: Number of receipts with at least one line item.
+        type: count
+
+      - name: revenue
+        title: Revenue
+        description: SUM(quantity * unit_price) over the order's line items.
+        sql: revenue
+        type: sum
+        format: currency
+
+      - name: units
+        title: Units sold
+        sql: units
+        type: sum
+
+      - name: average_order_value
+        title: Average order value
+        description: Revenue / orders (derived from additive measures, so rollups can serve it).
+        sql: "{revenue} / NULLIF({count}, 0)"
+        type: number
+        format: currency
+
+    pre_aggregations:
+      # Daily totals per store. Additive measures only, so any coarser time
+      # bucket (week, month) and any subset of stores/businesses rolls up exactly.
+      #
+      # Deliberately not partitioned. With partition_granularity, Cube v1.7.46
+      #  - clips a partition built on demand to the requesting query's date range and
+      #    then reuses that partial table for later queries (a one-day query built a
+      #    "March" partition holding only March 1), and
+      #  - with the default build range, ends the last partition at the latest sale's
+      #    local wall-clock time read as UTC, dropping that evening's sales.
+      # Both were caught by scripts/reconcile.mjs. One daily table is tiny at this data
+      # volume and is rebuilt whole on each refresh.
+      - name: daily_by_store
+        measures:
+          - orders.count
+          - orders.revenue
+          - orders.units
+        dimensions:
+          - orders.store_id
+          - businesses.slug
+        time_dimension: orders.sold_at
+        granularity: day
+        refresh_key:
+          every: 1 hour

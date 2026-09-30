@@ -1,0 +1,94 @@
+# One row per sale item, for product and category breakdowns. Revenue uses the
+# unit price actually charged (sale_items.unit_price), never products.list_price.
+# Every line item belongs to a receipt that has items, so no extra filter is needed.
+cubes:
+  - name: line_items
+    title: Line items
+    description: Individual sale items with the sale's store and timestamp.
+    sql: >
+      SELECT si.id,
+             si.sale_id,
+             si.product_id,
+             si.quantity,
+             si.unit_price,
+             s.store_id,
+             s.sold_at
+      FROM sale_items si
+      JOIN sales s ON s.id = si.sale_id
+
+    joins:
+      - name: products
+        relationship: many_to_one
+        sql: "{CUBE}.product_id = {products}.id"
+
+      - name: stores
+        relationship: many_to_one
+        sql: "{CUBE}.store_id = {stores}.id"
+
+    dimensions:
+      - name: id
+        sql: id
+        type: number
+        primary_key: true
+
+      - name: sale_id
+        sql: sale_id
+        type: number
+
+      - name: product_id
+        sql: product_id
+        type: number
+
+      - name: store_id
+        sql: store_id
+        type: number
+
+      - name: unit_price
+        sql: unit_price
+        type: number
+
+      - name: sold_at
+        title: Sold at
+        sql: sold_at
+        type: time
+
+    measures:
+      - name: revenue
+        title: Revenue
+        sql: "{CUBE}.quantity * {CUBE}.unit_price"
+        type: sum
+        format: currency
+
+      - name: units
+        title: Units sold
+        sql: quantity
+        type: sum
+
+      - name: count
+        title: Line items
+        type: count
+
+    pre_aggregations:
+      # Daily revenue/units per store and category (additive measures only).
+      #
+      # Deliberately not partitioned. With partition_granularity, Cube v1.7.46
+      #  - clips a partition built on demand to the requesting query's date range and
+      #    then reuses that partial table for later queries (a one-day query built a
+      #    "March" partition holding only March 1), and
+      #  - with the default build range, ends the last partition at the latest sale's
+      #    local wall-clock time read as UTC, dropping that evening's sales.
+      # Both were caught by scripts/reconcile.mjs. One daily table is tiny at this data
+      # volume and is rebuilt whole on each refresh.
+      - name: daily_by_store_category
+        measures:
+          - line_items.revenue
+          - line_items.units
+          - line_items.count
+        dimensions:
+          - line_items.store_id
+          - products.category
+          - businesses.slug
+        time_dimension: line_items.sold_at
+        granularity: day
+        refresh_key:
+          every: 1 hour

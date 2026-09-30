@@ -1,0 +1,109 @@
+# Reference data: businesses, stores and products.
+cubes:
+  - name: businesses
+    title: Businesses
+    sql_table: public.businesses
+
+    dimensions:
+      - name: id
+        sql: id
+        type: number
+        primary_key: true
+
+      - name: name
+        sql: name
+        type: string
+
+      - name: slug
+        sql: slug
+        type: string
+
+      - name: currency
+        sql: currency
+        type: string
+
+      - name: time_zone
+        description: IANA zone the business reports in; pass it as the query timezone.
+        sql: time_zone
+        type: string
+
+    measures:
+      - name: count
+        type: count
+
+  - name: stores
+    title: Stores
+    sql_table: public.stores
+
+    joins:
+      - name: businesses
+        relationship: many_to_one
+        sql: "{CUBE}.business_id = {businesses}.id"
+
+    dimensions:
+      - name: id
+        sql: id
+        type: number
+        primary_key: true
+        public: true
+
+      - name: business_id
+        sql: business_id
+        type: number
+
+      - name: code
+        sql: code
+        type: string
+
+      - name: name
+        sql: name
+        type: string
+
+      - name: city
+        sql: city
+        type: string
+
+    measures:
+      - name: count
+        type: count
+
+  - name: products
+    title: Products
+    sql_table: public.products
+
+    joins:
+      - name: businesses
+        relationship: many_to_one
+        sql: "{CUBE}.business_id = {businesses}.id"
+
+    dimensions:
+      - name: id
+        sql: id
+        type: number
+        primary_key: true
+        public: true
+
+      - name: business_id
+        sql: business_id
+        type: number
+
+      - name: sku
+        sql: sku
+        type: string
+
+      - name: name
+        sql: name
+        type: string
+
+      - name: category
+        sql: category
+        type: string
+
+      - name: list_price
+        description: Current list price. Not used for revenue; see line_items.revenue.
+        sql: list_price
+        type: number
+
+    measures:
+      - name: count
+        type: count
