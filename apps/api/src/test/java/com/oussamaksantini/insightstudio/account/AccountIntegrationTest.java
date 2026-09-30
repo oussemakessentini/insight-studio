@@ -5,11 +5,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.jayway.jsonpath.JsonPath;
 import com.oussamaksantini.insightstudio.PostgresIntegrationTest;
 import com.oussamaksantini.insightstudio.SqlFixture;
+import com.oussamaksantini.insightstudio.security.RateLimit;
 import com.oussamaksantini.insightstudio.testsupport.CapturingPasswordResetNotifier;
 import com.oussamaksantini.insightstudio.testsupport.HttpApiClient;
 import com.oussamaksantini.insightstudio.testsupport.TestAccounts;
 import java.net.http.HttpResponse;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -33,22 +33,13 @@ class AccountIntegrationTest extends PostgresIntegrationTest {
     JdbcTemplate jdbc;
 
     @Autowired
-    SignInAttempts attempts;
-
-    @Autowired
     CapturingPasswordResetNotifier notifier;
 
     @BeforeEach
     void clean() {
         new SqlFixture(jdbc).clear();
         new TestAccounts(jdbc).user(EMAIL);
-        attempts.reset();
         notifier.clear();
-    }
-
-    @AfterEach
-    void resetAttempts() {
-        attempts.reset();
     }
 
     private HttpApiClient browser() throws Exception {
@@ -128,14 +119,14 @@ class AccountIntegrationTest extends PostgresIntegrationTest {
         @Test
         void fiveFailuresPerEmailThen429() throws Exception {
             try (HttpApiClient client = browser()) {
-                for (int i = 0; i < SignInAttempts.MAX_PER_EMAIL; i++) {
+                for (int i = 0; i < RateLimit.SIGN_IN_PER_EMAIL.max(); i++) {
                     expect(signIn(client, EMAIL, "wrong password " + i), 401);
                 }
                 // Even the right password is refused while the limit holds.
                 HttpResponse<String> limited = signIn(client, EMAIL, TestAccounts.PASSWORD);
                 expect(limited, 429);
                 long retryAfter = Long.parseLong(limited.headers().firstValue("Retry-After").orElseThrow());
-                assertThat(retryAfter).isBetween(1L, SignInAttempts.WINDOW.toSeconds());
+                assertThat(retryAfter).isBetween(1L, RateLimit.SIGN_IN_PER_EMAIL.window().toSeconds());
                 assertThat(limited.headers().firstValue("Content-Type").orElse("")).contains("application/problem+json");
                 expect(client.get("/api/businesses"), 401);
                 // Other accounts from the same IP are not blocked yet.
@@ -147,7 +138,7 @@ class AccountIntegrationTest extends PostgresIntegrationTest {
         @Test
         void twentyFailuresPerIpThen429() throws Exception {
             try (HttpApiClient client = browser()) {
-                for (int i = 0; i < SignInAttempts.MAX_PER_IP; i++) {
+                for (int i = 0; i < RateLimit.SIGN_IN_PER_IP.max(); i++) {
                     expect(signIn(client, "nobody" + i + "@example.com", "wrong password"), 401);
                 }
                 expect(signIn(client, EMAIL, TestAccounts.PASSWORD), 429);

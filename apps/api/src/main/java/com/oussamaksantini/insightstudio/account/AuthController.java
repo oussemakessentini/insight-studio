@@ -43,7 +43,7 @@ class AuthController {
     @PostMapping("/sign-up")
     ResponseEntity<AccountResponse> signUp(
             @RequestBody SignUpRequest body, HttpServletRequest request, HttpServletResponse response) {
-        UserRow user = accounts.signUp(body.email(), body.password(), body.displayName());
+        UserRow user = accounts.signUp(body.email(), body.password(), body.displayName(), request.getRemoteAddr());
         sessions.signIn(principal(user), request, response);
         return ResponseEntity.status(HttpStatus.CREATED).body(new AccountResponse(info(user), List.of()));
     }
@@ -73,14 +73,14 @@ class AuthController {
     }
 
     @PostMapping("/password/forgot")
-    ResponseEntity<Void> forgotPassword(@RequestBody ForgotPasswordRequest body) {
-        accounts.requestPasswordReset(body.email());
+    ResponseEntity<Void> forgotPassword(@RequestBody ForgotPasswordRequest body, HttpServletRequest request) {
+        accounts.requestPasswordReset(body.email(), request.getRemoteAddr());
         return ResponseEntity.accepted().build();
     }
 
     @PostMapping("/password/reset")
-    ResponseEntity<Void> resetPassword(@RequestBody ResetPasswordRequest body) {
-        accounts.resetPassword(body.token(), body.newPassword());
+    ResponseEntity<Void> resetPassword(@RequestBody ResetPasswordRequest body, HttpServletRequest request) {
+        accounts.resetPassword(body.token(), body.newPassword(), request.getRemoteAddr());
         return ResponseEntity.noContent().build();
     }
 

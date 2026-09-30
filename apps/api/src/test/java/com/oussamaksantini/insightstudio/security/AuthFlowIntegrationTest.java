@@ -5,7 +5,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.jayway.jsonpath.JsonPath;
 import com.oussamaksantini.insightstudio.PostgresIntegrationTest;
 import com.oussamaksantini.insightstudio.SqlFixture;
-import com.oussamaksantini.insightstudio.account.SignInAttempts;
 import com.oussamaksantini.insightstudio.testsupport.HttpApiClient;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
@@ -31,13 +30,9 @@ class AuthFlowIntegrationTest extends PostgresIntegrationTest {
     @Autowired
     JdbcTemplate jdbc;
 
-    @Autowired
-    SignInAttempts attempts;
-
     @BeforeEach
     void clean() {
         new SqlFixture(jdbc).clear();
-        attempts.reset();
     }
 
     private static void expect(HttpResponse<String> response, int status) {

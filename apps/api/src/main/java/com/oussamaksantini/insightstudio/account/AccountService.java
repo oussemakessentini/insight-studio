@@ -2,6 +2,8 @@ package com.oussamaksantini.insightstudio.account;
 
 import com.oussamaksantini.insightstudio.account.UserQueries.UserRow;
 import com.oussamaksantini.insightstudio.common.web.ApiException;
+import com.oussamaksantini.insightstudio.security.RateLimit;
+import com.oussamaksantini.insightstudio.security.RateLimiter;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -17,11 +19,15 @@ import org.slf4j.LoggerFactory;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * Accounts: sign-up, password verification, password change and recovery
  * (docs/accounts-contract.md §1). Session handling lives in {@code SessionAuthentication}.
+ *
+ * <p>Rate limits ({@link RateLimiter}) are checked before any transaction starts and recorded in
+ * their own, so a counted failure survives the rollback of the request that failed and a request
+ * never holds two pooled connections. Writes that must happen together use {@code transactions}.
  */
 @Service
 public class AccountService {
@@ -38,7 +44,8 @@ public class AccountService {
 
     private final UserQueries users;
     private final PasswordEncoder encoder;
-    private final SignInAttempts attempts;
+    private final RateLimiter limits;
+    private final TransactionTemplate transactions;
     private final PasswordResetNotifier notifier;
     private final AccountProperties properties;
     private final SecureRandom random = new SecureRandom();
@@ -48,33 +55,43 @@ public class AccountService {
     AccountService(
             UserQueries users,
             PasswordEncoder encoder,
-            SignInAttempts attempts,
+            RateLimiter limits,
+            TransactionTemplate transactions,
             PasswordResetNotifier notifier,
             AccountProperties properties) {
         this.users = users;
         this.encoder = encoder;
-        this.attempts = attempts;
+        this.limits = limits;
+        this.transactions = transactions;
         this.notifier = notifier;
         this.properties = properties;
         this.dummyHash = encoder.encode("not-a-real-password-" + random.nextLong());
     }
 
-    /** Creates an account. 400 for invalid input, 409 when the email already has an account. */
-    @Transactional
-    public UserRow signUp(String email, String password, String displayName) {
+    /**
+     * Creates an account. 400 for invalid input, 409 when the email already has an account, 429
+     * after too many attempts from the client IP (every attempt counts, so the 409 cannot be used
+     * to test many emails for an account).
+     */
+    public UserRow signUp(String email, String password, String displayName, String clientIp) {
+        limits.acquire(RateLimit.SIGN_UP_PER_IP, clientIp);
         String cleanEmail = checkEmail(email);
         String cleanName = checkDisplayName(displayName);
         PasswordPolicy.check(password, cleanEmail);
         if (users.findByEmail(cleanEmail).isPresent()) {
             throw ApiException.conflict("An account with this email already exists.");
         }
+        String hash = encoder.encode(password);
         long id;
         try {
-            id = users.insert(cleanEmail, encoder.encode(password), cleanName);
+            id = transactions.execute(status -> {
+                long created = users.insert(cleanEmail, hash, cleanName);
+                users.recordSignIn(created);
+                return created;
+            });
         } catch (DuplicateKeyException e) {
             throw ApiException.conflict("An account with this email already exists.");
         }
-        users.recordSignIn(id);
         log.info("Account {} created.", id);
         return users.findById(id).orElseThrow();
     }
@@ -83,13 +100,13 @@ public class AccountService {
      * Verifies credentials. Unknown email and wrong password give the same 401 and cost the same
      * bcrypt verification; too many recent failures for the email or the IP give a 429.
      */
-    @Transactional
     public UserRow authenticate(String email, String password, String clientIp) {
         String cleanEmail = email == null ? "" : email.strip();
         if (cleanEmail.isEmpty() || password == null || password.isEmpty()) {
             throw ApiException.badRequest("Enter your email and password.");
         }
-        attempts.checkAllowed(cleanEmail, clientIp);
+        limits.check(RateLimit.SIGN_IN_PER_EMAIL, cleanEmail);
+        limits.check(RateLimit.SIGN_IN_PER_IP, clientIp);
         Optional<UserRow> user = cleanEmail.length() > MAX_EMAIL_LENGTH ? Optional.empty() : users.findByEmail(cleanEmail);
         boolean usable = PasswordPolicy.fitsBcrypt(password);
         boolean matches;
@@ -100,10 +117,10 @@ public class AccountService {
             matches = false;
         }
         if (!matches) {
-            attempts.recordFailure(cleanEmail, clientIp);
+            recordFailure(cleanEmail, clientIp);
             throw ApiException.unauthorized(INVALID_CREDENTIALS);
         }
-        attempts.recordSuccess(cleanEmail);
+        limits.clear(RateLimit.SIGN_IN_PER_EMAIL, cleanEmail);
         users.recordSignIn(user.get().id());
         return user.get();
     }
@@ -112,33 +129,42 @@ public class AccountService {
      * Changes the password of the signed-in user and returns the principal for the new session
      * version: every other session of the user is signed out, the caller refreshes its own.
      */
-    @Transactional
     public AccountPrincipal changePassword(
             AccountPrincipal principal, String currentPassword, String newPassword, String clientIp) {
         UserRow user = users.findById(principal.userId())
                 .orElseThrow(() -> ApiException.unauthorized("Sign in to continue."));
-        attempts.checkAllowed(user.email(), clientIp);
+        limits.check(RateLimit.SIGN_IN_PER_EMAIL, user.email());
+        limits.check(RateLimit.SIGN_IN_PER_IP, clientIp);
         boolean matches = currentPassword != null && PasswordPolicy.fitsBcrypt(currentPassword)
                 && encoder.matches(currentPassword, user.passwordHash());
         if (!matches) {
-            attempts.recordFailure(user.email(), clientIp);
+            recordFailure(user.email(), clientIp);
             throw ApiException.badRequest("The current password is incorrect.");
         }
         PasswordPolicy.check(newPassword, user.email());
-        int version = users.updatePassword(user.id(), encoder.encode(newPassword));
-        users.invalidateResetTokens(user.id());
+        String hash = encoder.encode(newPassword);
+        int version = transactions.execute(status -> {
+            int updated = users.updatePassword(user.id(), hash);
+            users.invalidateResetTokens(user.id());
+            return updated;
+        });
         log.info("Password changed for account {}; other sessions signed out.", user.id());
         return new AccountPrincipal(user.id(), user.email(), version);
     }
 
     /**
-     * Sends a reset link when the email has an account; does nothing otherwise. The caller always
-     * answers 202, so the response never reveals whether an account exists.
+     * Emails a reset link when the email has an account; does nothing otherwise. The caller always
+     * answers 202, so the response never reveals whether an account exists. 429 after too many
+     * requests from the client IP; past {@link RateLimit#RESET_EMAIL_PER_ADDRESS} for one address
+     * the request is accepted but nothing is sent (whether or not the account exists).
      */
-    @Transactional
-    public void requestPasswordReset(String email) {
+    public void requestPasswordReset(String email, String clientIp) {
+        limits.acquire(RateLimit.RESET_REQUEST_PER_IP, clientIp);
         String cleanEmail = email == null ? "" : email.strip();
         if (cleanEmail.isEmpty() || cleanEmail.length() > MAX_EMAIL_LENGTH) {
+            return;
+        }
+        if (!limits.tryAcquire(RateLimit.RESET_EMAIL_PER_ADDRESS, cleanEmail)) {
             return;
         }
         Optional<UserRow> user = users.findByEmail(cleanEmail);
@@ -148,8 +174,10 @@ public class AccountService {
         byte[] bytes = new byte[RESET_TOKEN_BYTES];
         random.nextBytes(bytes);
         String token = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
-        users.invalidateResetTokens(user.get().id());
-        users.insertResetToken(user.get().id(), sha256(token), Instant.now().plus(RESET_TOKEN_LIFETIME));
+        transactions.executeWithoutResult(status -> {
+            users.invalidateResetTokens(user.get().id());
+            users.insertResetToken(user.get().id(), sha256(token), Instant.now().plus(RESET_TOKEN_LIFETIME));
+        });
         notifier.sendResetLink(user.get().email(), user.get().displayName(), properties.resetLinkBase() + "?token=" + token);
     }
 
@@ -157,22 +185,32 @@ public class AccountService {
      * Sets a new password from a reset token: the token must be unused and unexpired, and is spent
      * by this call. Signs out every session of the user.
      */
-    @Transactional
-    public void resetPassword(String token, String newPassword) {
+    public void resetPassword(String token, String newPassword, String clientIp) {
+        limits.acquire(RateLimit.RESET_CONFIRM_PER_IP, clientIp);
         if (token == null || token.isBlank() || token.length() > 100) {
             throw ApiException.badRequest(INVALID_RESET_LINK);
         }
         // Check what can be checked without the account first, so a typo doesn't spend the link.
         PasswordPolicy.check(newPassword, null);
-        long userId = users.consumeResetToken(sha256(token.strip()))
-                .orElseThrow(() -> ApiException.badRequest(INVALID_RESET_LINK));
-        UserRow user = users.findById(userId).orElseThrow(() -> ApiException.badRequest(INVALID_RESET_LINK));
-        // Throwing here rolls the token back to unused.
-        PasswordPolicy.check(newPassword, user.email());
-        users.updatePassword(userId, encoder.encode(newPassword));
-        users.invalidateResetTokens(userId);
-        attempts.recordSuccess(user.email());
-        log.info("Password reset for account {}; all sessions signed out.", userId);
+        String hash = encoder.encode(newPassword);
+        UserRow user = transactions.execute(status -> {
+            long userId = users.consumeResetToken(sha256(token.strip()))
+                    .orElseThrow(() -> ApiException.badRequest(INVALID_RESET_LINK));
+            UserRow owner = users.findById(userId).orElseThrow(() -> ApiException.badRequest(INVALID_RESET_LINK));
+            // Throwing here rolls the token back to unused.
+            PasswordPolicy.check(newPassword, owner.email());
+            users.updatePassword(userId, hash);
+            users.invalidateResetTokens(userId);
+            return owner;
+        });
+        // The owner proved control of the mailbox: earlier failed sign-ins no longer count.
+        limits.clear(RateLimit.SIGN_IN_PER_EMAIL, user.email());
+        log.info("Password reset for account {}; all sessions signed out.", user.id());
+    }
+
+    private void recordFailure(String email, String clientIp) {
+        limits.record(RateLimit.SIGN_IN_PER_EMAIL, email);
+        limits.record(RateLimit.SIGN_IN_PER_IP, clientIp);
     }
 
     public Optional<UserRow> find(long userId) {
