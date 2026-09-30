@@ -13,7 +13,27 @@ export type Route =
   | { name: 'reports' }
   | { name: 'imports' }
   | { name: 'import'; importId: number }
+  | { name: 'signIn' }
+  | { name: 'signUp' }
+  | { name: 'forgotPassword' }
+  | { name: 'resetPassword' }
+  | { name: 'account' }
+  | { name: 'newBusiness' }
+  | { name: 'members' }
+  | { name: 'catalog' }
   | { name: 'notFound' }
+
+/** Pages for signing in and recovering an account; they don't need a session or a business. */
+export type AuthRouteName = 'signIn' | 'signUp' | 'forgotPassword' | 'resetPassword'
+
+export function isAuthRoute(route: Route): route is Route & { name: AuthRouteName } {
+  return route.name === 'signIn' || route.name === 'signUp' || route.name === 'forgotPassword' || route.name === 'resetPassword'
+}
+
+/** Pages about the signed-in user or business administration; never shown to anonymous visitors. */
+export function requiresAccount(route: Route): boolean {
+  return route.name === 'account' || route.name === 'newBusiness' || route.name === 'members' || route.name === 'catalog'
+}
 
 const NAVIGATE_EVENT = 'app:navigate'
 
@@ -67,13 +87,44 @@ export function matchRoute(pathname: string): Route {
   if (path === '/imports') return { name: 'imports' }
   const batch = /^\/imports\/(\d+)$/.exec(path)
   if (batch) return { name: 'import', importId: Number(batch[1]) }
+  if (path === '/sign-in') return { name: 'signIn' }
+  if (path === '/sign-up') return { name: 'signUp' }
+  if (path === '/forgot-password') return { name: 'forgotPassword' }
+  if (path === '/reset-password') return { name: 'resetPassword' }
+  if (path === '/account') return { name: 'account' }
+  if (path === '/businesses/new') return { name: 'newBusiness' }
+  if (path === '/settings/members') return { name: 'members' }
+  if (path === '/settings/catalog') return { name: 'catalog' }
   return { name: 'notFound' }
 }
 
-export function navigate(href: string): void {
-  window.history.pushState(null, '', href)
+/** Navigates client-side; `replace` swaps the current history entry (for redirects). */
+export function navigate(href: string, { replace = false }: { replace?: boolean } = {}): void {
+  if (replace) window.history.replaceState(null, '', href)
+  else window.history.pushState(null, '', href)
   window.dispatchEvent(new Event(NAVIGATE_EVENT))
   window.scrollTo(0, 0)
+}
+
+/** The current path and query, e.g. to come back after signing in. */
+export function currentLocation(): string {
+  return `${window.location.pathname}${window.location.search}`
+}
+
+/** `/sign-in?next=…` that returns to `next` (default: here) after signing in. */
+export function signInHref(next: string = currentLocation(), page: '/sign-in' | '/sign-up' = '/sign-in'): string {
+  return next && next !== '/' ? `${page}?next=${encodeURIComponent(next)}` : page
+}
+
+/**
+ * The `?next=` target, only if it is a path on this site (never `//host` or `https://…`, which
+ * would make the sign-in page an open redirect) and not another sign-in page.
+ */
+export function safeNext(): string {
+  const next = new URLSearchParams(window.location.search).get('next') ?? ''
+  if (!next.startsWith('/') || next.startsWith('//') || next.startsWith('/\\')) return '/'
+  if (isAuthRoute(matchRoute(next.split('?')[0]))) return '/'
+  return next
 }
 
 /** Merges `updates` into the current query string without adding a history entry. `null` removes a key. */

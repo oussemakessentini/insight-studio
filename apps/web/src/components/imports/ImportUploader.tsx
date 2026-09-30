@@ -247,9 +247,7 @@ interface UploadError {
 function uploadError(err: unknown, bytes: number): UploadError {
   if (err instanceof ApiError) {
     if (err.status === 413) return { message: tooLargeMessage(bytes), retryable: false }
-    if (err.status === 404) {
-      return { message: 'The import endpoint is not available. Is the API running with the local profile?', retryable: true }
-    }
+    // A 403 (role without imports, or the read-only demo) carries the server's explanation.
     return { message: err.message, retryable: err.status === 0 || err.status >= 500 }
   }
   return { message: err instanceof Error ? err.message : String(err), retryable: true }
