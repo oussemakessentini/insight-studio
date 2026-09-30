@@ -380,7 +380,8 @@ function NotFound({ homeHref }: { homeHref: string }) {
 
 /** A role-gated page the current user (or the demo) can't use. */
 function NoAccess({ access, businessName, homeHref }: { access: BusinessAccess; businessName: string; homeHref: string }) {
-  const demo = access.role === 'DEMO' || access.readOnly
+  // readOnly is also true for signed-in VIEWERs; only the anonymous public demo has role DEMO.
+  const demo = access.role === 'DEMO'
   return (
     <div className="panel page-error">
       <h1 className="page-title">{demo ? 'The demo is read-only' : "You don't have access to this page"}</h1>
