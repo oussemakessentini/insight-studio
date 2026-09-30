@@ -13,6 +13,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.jayway.jsonpath.JsonPath;
 import com.oussamaksantini.insightstudio.PostgresIntegrationTest;
 import com.oussamaksantini.insightstudio.SqlFixture;
+import com.oussamaksantini.insightstudio.testsupport.TestAccounts;
 import java.math.BigDecimal;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
@@ -24,6 +25,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.web.context.WebApplicationContext;
 
 /**
  * Store endpoints against PostgreSQL with a hand-built dataset (business time zone UTC).
@@ -45,6 +47,8 @@ class StoreApiIntegrationTest extends PostgresIntegrationTest {
     private static final String WINDOW = "from=2026-06-01&to=2026-06-14";
 
     @Autowired
+    WebApplicationContext context;
+
     MockMvc mvc;
 
     @Autowired
@@ -61,6 +65,8 @@ class StoreApiIntegrationTest extends PostgresIntegrationTest {
         db.clear();
 
         long business = db.business("Test Co", "test-co", "EUR", "UTC");
+
+        mvc = TestAccounts.ownerMvc(context, jdbc, business);
         alpha = db.store(business, "A", "Alpha", "Paris");
         bravo = db.store(business, "B", "Bravo", "Lyon");
         charlie = db.store(business, "C", "Charlie", null);

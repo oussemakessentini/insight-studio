@@ -10,12 +10,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.oussamaksantini.insightstudio.PostgresIntegrationTest;
 import com.oussamaksantini.insightstudio.SqlFixture;
+import com.oussamaksantini.insightstudio.testsupport.TestAccounts;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.web.context.WebApplicationContext;
 
 /**
  * Product endpoints against PostgreSQL with a hand-built dataset (business time zone UTC).
@@ -36,6 +38,8 @@ class ProductApiIntegrationTest extends PostgresIntegrationTest {
     private static final String WINDOW = "from=2026-06-01&to=2026-06-14";
 
     @Autowired
+    WebApplicationContext context;
+
     MockMvc mvc;
 
     @Autowired
@@ -53,6 +57,8 @@ class ProductApiIntegrationTest extends PostgresIntegrationTest {
         db.clear();
 
         long business = db.business("Test Co", "test-co", "EUR", "UTC");
+
+        mvc = TestAccounts.ownerMvc(context, jdbc, business);
         long storeA = db.store(business, "A", "Alpha", "Paris");
         storeB = db.store(business, "B", "Bravo", "Lyon");
         tee = db.product(business, "TEE-001", "Classic Tee", "Tops", "25.00");
