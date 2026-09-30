@@ -11,10 +11,12 @@ cubes:
              si.product_id,
              si.quantity,
              si.unit_price,
+             st.business_id,
              s.store_id,
              s.sold_at
       FROM sale_items si
       JOIN sales s ON s.id = si.sale_id
+      JOIN stores st ON st.id = s.store_id
 
     joins:
       - name: products
@@ -37,6 +39,11 @@ cubes:
 
       - name: product_id
         sql: product_id
+        type: number
+
+      - name: business_id
+        description: Business of the sale's store. Every query is filtered on it (services/analytics/security.js).
+        sql: business_id
         type: number
 
       - name: store_id
@@ -69,7 +76,9 @@ cubes:
         type: count
 
     pre_aggregations:
-      # Daily revenue/units per store and category (additive measures only).
+      # Daily revenue/units per business, store and category (additive measures only).
+      # Both business ids are dimensions: a query touching products.* also gets a mandatory
+      # products.business_id filter (security.js), and the rollup must still serve it.
       #
       # Deliberately not partitioned. With partition_granularity, Cube v1.7.46
       #  - clips a partition built on demand to the requesting query's date range and
@@ -85,9 +94,10 @@ cubes:
           - line_items.units
           - line_items.count
         dimensions:
+          - line_items.business_id
           - line_items.store_id
+          - products.business_id
           - products.category
-          - businesses.slug
         time_dimension: line_items.sold_at
         granularity: day
         refresh_key:

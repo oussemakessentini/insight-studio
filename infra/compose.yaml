@@ -18,14 +18,18 @@ services:
 
   # Cube semantic layer over the same database (model in services/analytics).
   # Opt-in: docker compose --profile analytics up -d. Plain `up` starts only db.
-  # Dev mode (Playground, on-demand pre-aggregation builds, embedded Cube Store)
-  # is for local use only; see docs/analytics.md.
+  # Private: the Spring API is its only client. Production mode (no Playground, no
+  # dev endpoints); every request needs a short-lived JWT signed with
+  # CUBEJS_API_SECRET that names one business (services/analytics/security.js).
+  # Published on 127.0.0.1 only, for the API running on the host. See docs/analytics.md.
   cube:
     image: cubejs/cube:v1.7.46
     profiles: ["analytics"]
     depends_on:
       db:
         condition: service_healthy
+      cubestore:
+        condition: service_started
     environment:
       CUBEJS_DB_TYPE: postgres
       CUBEJS_DB_HOST: db
@@ -33,18 +37,31 @@ services:
       CUBEJS_DB_NAME: ${POSTGRES_DB}
       CUBEJS_DB_USER: ${POSTGRES_USER}
       CUBEJS_DB_PASS: ${POSTGRES_PASSWORD}
+      # Required, at least 32 characters: Cube refuses every request otherwise.
       CUBEJS_API_SECRET: ${CUBEJS_API_SECRET}
-      CUBEJS_DEV_MODE: "true"
+      CUBEJS_DEV_MODE: "false"
+      NODE_ENV: production
+      # This single instance also refreshes the pre-aggregations.
+      CUBEJS_REFRESH_WORKER: "true"
+      CUBEJS_CUBESTORE_HOST: cubestore
       CUBEJS_SCHEDULED_REFRESH_TIMEZONES: ${CUBEJS_SCHEDULED_REFRESH_TIMEZONES:-America/New_York}
       CUBEJS_TELEMETRY: "false"
-      # Keep the embedded Cube Store's files inside the container: on the Windows
-      # bind mount, pre-aggregation uploads fail. Rollups are rebuilt on recreate.
-      CUBESTORE_DATA_DIR: /cube/cubestore/data
-      CUBESTORE_REMOTE_DIR: /cube/cubestore/remote
     ports:
       - "127.0.0.1:4000:4000"
     volumes:
-      - ../services/analytics:/cube/conf
+      - ../services/analytics:/cube/conf:ro
+
+  # Stores Cube's pre-aggregations (rollups). Not published: only the cube service reaches it.
+  cubestore:
+    image: cubejs/cubestore:v1.7.46
+    profiles: ["analytics"]
+    environment:
+      CUBESTORE_REMOTE_DIR: /cube/data
+      CUBESTORE_TELEMETRY: "false"
+    volumes:
+      # A named volume, not a bind mount: rollup uploads failed on a Windows bind mount.
+      - cubestore_data:/cube/data
 
 volumes:
   postgres_data:
+  cubestore_data:

@@ -4,8 +4,12 @@
 //   CUBE_URL=http://localhost:4000 API_URL=http://localhost:8080 CUBEJS_API_SECRET=... \
 //     node services/analytics/scripts/reconcile.mjs
 //
-// Node 20+, no dependencies. The Cube JWT is signed locally (HS256) with CUBEJS_API_SECRET,
-// which is read from the environment only. Exits 1 on any mismatch beyond 0.005, 2 on errors.
+// Node 20+, no dependencies. Cube only answers tokens that name one business, so the script
+// reconciles the API's public demo business: its id comes from BUSINESS_ID when set, otherwise
+// from GET /api/session (`demo.businessId`). Each Cube request gets a fresh 60-second HS256
+// token signed with CUBEJS_API_SECRET, which is read from the environment only.
+// When the API has Cube configured, /api/analytics/summary is reconciled too.
+// Exits 1 on any mismatch beyond 0.005, 2 on errors.
 
 import { createHmac } from 'node:crypto';
 
@@ -23,15 +27,33 @@ if (!SECRET) {
 
 const b64url = (value) => Buffer.from(value).toString('base64url');
 
+let businessId = null;
+
 function cubeToken() {
   const now = Math.floor(Date.now() / 1000);
   const header = b64url(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
-  const payload = b64url(JSON.stringify({ iat: now, exp: now + 3600 }));
+  const payload = b64url(JSON.stringify({ businessId, iat: now, exp: now + 60 }));
   const signature = createHmac('sha256', SECRET).update(`${header}.${payload}`).digest('base64url');
   return `${header}.${payload}.${signature}`;
 }
 
-const TOKEN = cubeToken();
+/** The business to reconcile: BUSINESS_ID, or the API's public demo business. */
+async function resolveBusinessId() {
+  if (process.env.BUSINESS_ID) {
+    const id = Number(process.env.BUSINESS_ID);
+    if (!Number.isSafeInteger(id) || id <= 0) throw new Error(`BUSINESS_ID must be a positive integer, got ${process.env.BUSINESS_ID}`);
+    return id;
+  }
+  const res = await fetch(`${API_URL}/api/session`);
+  const session = res.ok ? await res.json().catch(() => null) : null;
+  const id = session && session.demo && session.demo.enabled ? session.demo.businessId : null;
+  if (!Number.isSafeInteger(id) || id <= 0) {
+    throw new Error(`Could not read the demo business id from ${API_URL}/api/session (HTTP ${res.status}); `
+      + 'start the API with the demo profile or set BUSINESS_ID.');
+  }
+  return id;
+}
+
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function apiGet(path, params = {}) {
@@ -50,7 +72,7 @@ async function cubeLoad(query) {
   for (let attempt = 0; attempt < 120; attempt++) {
     const res = await fetch(`${CUBE_URL}/cubejs-api/v1/load`, {
       method: 'POST',
-      headers: { Authorization: TOKEN, 'Content-Type': 'application/json' },
+      headers: { Authorization: cubeToken(), 'Content-Type': 'application/json' },
       body: JSON.stringify({ query }),
     });
     const body = await res.json().catch(() => ({}));
@@ -105,6 +127,7 @@ main().then(
 async function main() {
   // -------------------------------------------------------------- setup
 
+  businessId = await resolveBusinessId();
   const context = await apiGet('/api/dashboard/context');
   const { slug, timeZone } = context.business;
   if (!context.dataRange) {
@@ -123,10 +146,9 @@ async function main() {
     { name: 'all data', from: firstDay, to: lastDay },
   ];
 
-  console.log(`Business ${slug} (${timeZone}), data ${firstDay}..${lastDay}, ${context.stores.length} stores`);
+  console.log(`Business ${slug} (id ${businessId}, ${timeZone}), data ${firstDay}..${lastDay}, ${context.stores.length} stores`);
   console.log(`Cube ${CUBE_URL}  API ${API_URL}\n`);
 
-  const businessFilter = { member: 'businesses.slug', operator: 'equals', values: [slug] };
   const storeFilter = (member, storeId) =>
     storeId === null ? [] : [{ member, operator: 'equals', values: [String(storeId)] }];
 
@@ -139,7 +161,7 @@ async function main() {
         cubeLoad({
           measures: ['orders.revenue', 'orders.count', 'orders.units', 'orders.average_order_value'],
           timeDimensions: [{ dimension: 'orders.sold_at', dateRange: [w.from, w.to] }],
-          filters: [businessFilter, ...storeFilter('orders.store_id', store.id)],
+          filters: [...storeFilter('orders.store_id', store.id)],
           timezone: timeZone,
         }),
         apiGet('/api/dashboard/summary', { from: w.from, to: w.to, storeId: store.id }),
@@ -167,7 +189,7 @@ async function main() {
         cubeLoad({
           measures: ['orders.revenue', 'orders.count'],
           timeDimensions: [{ dimension: 'orders.sold_at', granularity: s.granularity, dateRange: [s.from, s.to] }],
-          filters: [businessFilter, ...storeFilter('orders.store_id', store.id)],
+          filters: [...storeFilter('orders.store_id', store.id)],
           timezone: timeZone,
           order: { 'orders.sold_at': 'asc' },
         }),
@@ -211,7 +233,7 @@ async function main() {
           measures: ['line_items.revenue', 'line_items.units'],
           dimensions: ['products.category'],
           timeDimensions: [{ dimension: 'line_items.sold_at', dateRange: [w.from, w.to] }],
-          filters: [businessFilter, ...storeFilter('line_items.store_id', store.id)],
+          filters: [...storeFilter('line_items.store_id', store.id)],
           timezone: timeZone,
         }),
         apiCategoryTotals(w.from, w.to, store.id),
@@ -229,6 +251,41 @@ async function main() {
       }
       console.log(`${`categories ${w.name} ${store.label}`.padEnd(62)} ${apiTotals.size} categories`);
     }
+  }
+
+  // ---------------------------------------------------------------- 4. API analytics endpoint
+
+  // /api/analytics/summary is served by Cube through the API (the API signs its own token for
+  // the business it resolves). Skipped when the API has no Cube configured (503).
+  let analyticsChecked = 0;
+  analytics: for (const w of windows) {
+    for (const store of stores) {
+      const params = { from: w.from, to: w.to, storeId: store.id };
+      const url = new URL(`${API_URL}/api/analytics/summary`);
+      for (const [key, value] of Object.entries(params)) {
+        if (value !== null) url.searchParams.set(key, String(value));
+      }
+      const res = await fetch(url);
+      if (res.status === 503) {
+        console.log('\n/api/analytics/summary: API has no Cube configured (503), skipped');
+        break analytics;
+      }
+      if (!res.ok) throw new Error(`API ${res.status} for ${url}: ${await res.text()}`);
+      const [cubeSummary, summary] = [await res.json(), await apiGet('/api/dashboard/summary', params)];
+      const label = `analytics ${w.name} ${store.label}`;
+      if (cubeSummary.source !== 'cube') mismatches.push(`${label}: source is ${cubeSummary.source}`);
+      if (cubeSummary.period.from !== summary.period.from || cubeSummary.period.to !== summary.period.to) {
+        mismatches.push(`${label}: period ${JSON.stringify(cubeSummary.period)} != ${JSON.stringify(summary.period)}`);
+      }
+      compare(`${label} revenue`, cubeSummary.revenue, summary.revenue.value);
+      compare(`${label} orders`, cubeSummary.orders, summary.orders.value);
+      compare(`${label} units`, cubeSummary.unitsSold, summary.unitsSold.value);
+      compare(`${label} AOV`, cubeSummary.averageOrderValue, summary.averageOrderValue.value);
+      analyticsChecked++;
+    }
+  }
+  if (analyticsChecked > 0) {
+    console.log(`\n/api/analytics/summary compared with /api/dashboard/summary for ${analyticsChecked} window/store pairs`);
   }
 
   // ---------------------------------------------------------------- result

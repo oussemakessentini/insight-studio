@@ -9,6 +9,8 @@ cubes:
         sql: id
         type: number
         primary_key: true
+        # Public so the mandatory business filter (security.js) can use it.
+        public: true
 
       - name: name
         sql: name
