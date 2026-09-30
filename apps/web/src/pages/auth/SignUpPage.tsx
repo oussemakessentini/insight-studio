@@ -80,7 +80,7 @@ export function SignUpPage() {
           maxLength={100}
           value={displayName}
           onChange={setDisplayName}
-          onBlur={() => touched.touch('displayName')}
+          onBlur={(e) => touched.touch('displayName', e.currentTarget.value)}
           error={touched.shows('displayName') ? errors.displayName : null}
           disabled={busy}
         />
@@ -93,7 +93,7 @@ export function SignUpPage() {
           spellCheck={false}
           value={email}
           onChange={setEmail}
-          onBlur={() => touched.touch('email')}
+          onBlur={(e) => touched.touch('email', e.currentTarget.value)}
           error={touched.shows('email') ? errors.email : null}
           disabled={busy}
         />
@@ -104,7 +104,7 @@ export function SignUpPage() {
           autoComplete="new-password"
           value={password}
           onChange={setPassword}
-          onBlur={() => touched.touch('password')}
+          onBlur={(e) => touched.touch('password', e.currentTarget.value)}
           error={touched.shows('password') ? errors.password : null}
           hint={PASSWORD_HINT}
           disabled={busy}

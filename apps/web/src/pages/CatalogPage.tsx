@@ -107,7 +107,7 @@ function NewStore({ href, onCreated }: { href: (path: string) => string; onCreat
             spellCheck={false}
             value={code}
             onChange={(v) => setCode(v.toUpperCase())}
-            onBlur={() => touched.touch('code')}
+            onBlur={(e) => touched.touch('code', e.currentTarget.value)}
             error={touched.shows('code') ? errors.code : null}
             disabled={busy}
           />
@@ -127,7 +127,7 @@ function NewStore({ href, onCreated }: { href: (path: string) => string; onCreat
           autoComplete="off"
           value={name}
           onChange={setName}
-          onBlur={() => touched.touch('name')}
+          onBlur={(e) => touched.touch('name', e.currentTarget.value)}
           error={touched.shows('name') ? errors.name : null}
           disabled={busy}
         />
@@ -213,7 +213,7 @@ function NewProduct({ currency, href }: { currency: string; href: (path: string)
             spellCheck={false}
             value={sku}
             onChange={setSku}
-            onBlur={() => touched.touch('sku')}
+            onBlur={(e) => touched.touch('sku', e.currentTarget.value)}
             error={touched.shows('sku') ? errors.sku : null}
             disabled={busy}
           />
@@ -224,7 +224,7 @@ function NewProduct({ currency, href }: { currency: string; href: (path: string)
             inputMode="decimal"
             value={listPrice}
             onChange={setListPrice}
-            onBlur={() => touched.touch('listPrice')}
+            onBlur={(e) => touched.touch('listPrice', e.currentTarget.value)}
             error={touched.shows('listPrice') ? errors.listPrice : null}
             disabled={busy}
           />
@@ -235,7 +235,7 @@ function NewProduct({ currency, href }: { currency: string; href: (path: string)
           autoComplete="off"
           value={name}
           onChange={setName}
-          onBlur={() => touched.touch('name')}
+          onBlur={(e) => touched.touch('name', e.currentTarget.value)}
           error={touched.shows('name') ? errors.name : null}
           disabled={busy}
         />
@@ -246,7 +246,7 @@ function NewProduct({ currency, href }: { currency: string; href: (path: string)
           list="catalog-categories"
           value={category}
           onChange={setCategory}
-          onBlur={() => touched.touch('category')}
+          onBlur={(e) => touched.touch('category', e.currentTarget.value)}
           error={touched.shows('category') ? errors.category : null}
           hint={categories.data?.categories.length ? 'Pick an existing category or type a new one.' : undefined}
           disabled={busy}

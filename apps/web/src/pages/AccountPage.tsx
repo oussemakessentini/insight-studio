@@ -97,7 +97,7 @@ function ChangePassword({ email }: { email: string }) {
           autoComplete="current-password"
           value={current}
           onChange={setCurrent}
-          onBlur={() => touched.touch('current')}
+          onBlur={(e) => touched.touch('current', e.currentTarget.value)}
           error={touched.shows('current') ? errors.current : null}
           disabled={busy}
         />
@@ -108,7 +108,7 @@ function ChangePassword({ email }: { email: string }) {
           autoComplete="new-password"
           value={password}
           onChange={setPassword}
-          onBlur={() => touched.touch('password')}
+          onBlur={(e) => touched.touch('password', e.currentTarget.value)}
           error={touched.shows('password') ? errors.password : null}
           hint={PASSWORD_HINT}
           disabled={busy}
@@ -120,7 +120,7 @@ function ChangePassword({ email }: { email: string }) {
           autoComplete="new-password"
           value={confirmation}
           onChange={setConfirmation}
-          onBlur={() => touched.touch('confirmation')}
+          onBlur={(e) => touched.touch('confirmation', e.currentTarget.value)}
           error={touched.shows('confirmation') ? errors.confirmation : null}
           disabled={busy}
         />

@@ -137,7 +137,7 @@ function AddMember({ businessId, roles, onAdded }: { businessId: number; roles: 
             spellCheck={false}
             value={email}
             onChange={setEmail}
-            onBlur={() => touched.touch('email')}
+            onBlur={(e) => touched.touch('email', e.currentTarget.value)}
             error={touched.shows('email') ? fieldError : null}
             disabled={busy}
             fieldClassName="form-grow"

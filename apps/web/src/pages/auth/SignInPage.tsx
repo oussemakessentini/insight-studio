@@ -66,7 +66,7 @@ export function SignInPage() {
           autoFocus
           value={email}
           onChange={setEmail}
-          onBlur={() => touched.touch('email')}
+          onBlur={(e) => touched.touch('email', e.currentTarget.value)}
           error={touched.shows('email') ? errors.email : null}
           disabled={busy}
         />
@@ -77,7 +77,7 @@ export function SignInPage() {
           autoComplete="current-password"
           value={password}
           onChange={setPassword}
-          onBlur={() => touched.touch('password')}
+          onBlur={(e) => touched.touch('password', e.currentTarget.value)}
           error={touched.shows('password') ? errors.password : null}
           disabled={busy}
         />

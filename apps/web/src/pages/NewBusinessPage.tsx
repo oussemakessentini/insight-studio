@@ -102,7 +102,7 @@ export function NewBusinessPage({ onboarding = false }: { onboarding?: boolean }
           maxLength={100}
           value={name}
           onChange={setName}
-          onBlur={() => touched.touch('name')}
+          onBlur={(e) => touched.touch('name', e.currentTarget.value)}
           error={touched.shows('name') ? nameError : null}
           disabled={busy}
         />

@@ -99,7 +99,7 @@ export function ResetPasswordPage() {
           autoFocus
           value={password}
           onChange={setPassword}
-          onBlur={() => touched.touch('password')}
+          onBlur={(e) => touched.touch('password', e.currentTarget.value)}
           error={touched.shows('password') ? errors.password : null}
           hint={PASSWORD_HINT}
           disabled={busy}
@@ -111,7 +111,7 @@ export function ResetPasswordPage() {
           autoComplete="new-password"
           value={confirmation}
           onChange={setConfirmation}
-          onBlur={() => touched.touch('confirmation')}
+          onBlur={(e) => touched.touch('confirmation', e.currentTarget.value)}
           error={touched.shows('confirmation') ? errors.confirmation : null}
           disabled={busy}
         />
