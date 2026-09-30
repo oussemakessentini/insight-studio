@@ -6,6 +6,8 @@ export interface SessionUser {
   id: number
   email: string
   displayName: string
+  /** Until verified, the account can read but not create or change a business. */
+  emailVerified: boolean
 }
 
 export interface Membership {
@@ -97,8 +99,14 @@ export const authApi = {
   signIn: (email: string, password: string) =>
     postJson<SignInResponse>('/api/auth/sign-in', { email, password }, credentials),
 
+  // Always 202 once the input is valid (the same answer for an address that already has an
+  // account); nobody is signed in.
   signUp: (email: string, password: string, displayName: string) =>
-    postJson<SignInResponse>('/api/auth/sign-up', { email, password, displayName }, credentials),
+    postJson('/api/auth/sign-up', { email, password, displayName }, credentials),
+
+  verifyEmail: (token: string) => postJson('/api/auth/verify-email', { token }, credentials),
+
+  resendVerification: () => postJson('/api/auth/verify-email/resend', undefined, account),
 
   signOut: () => postJson('/api/auth/sign-out', undefined, credentials),
 

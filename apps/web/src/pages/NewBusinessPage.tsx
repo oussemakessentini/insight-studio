@@ -2,6 +2,7 @@ import { useMemo, useState, type FormEvent } from 'react'
 import { businessesApi } from '../api/account'
 import { FormError, SelectField, SubmitButton, TextField } from '../components/Form'
 import { Link } from '../components/Link'
+import { ResendVerification } from '../components/VerifyEmailBanner'
 import { useTouched } from '../hooks/useTouched'
 import { useLoadedSession } from '../lib/session'
 import { errorMessage, requiredError } from '../lib/validation'
@@ -52,7 +53,7 @@ function timeZoneOptions(local: string): string[] {
  * onboarding step for a new account (`onboarding`).
  */
 export function NewBusinessPage({ onboarding = false }: { onboarding?: boolean }) {
-  const { reload, selectBusiness } = useLoadedSession()
+  const { session, reload, selectBusiness } = useLoadedSession()
   const local = useMemo(() => localTimeZone(), [])
   const currencies = useMemo(() => currencyOptions(), [])
   const zones = useMemo(() => timeZoneOptions(local), [local])
@@ -82,13 +83,30 @@ export function NewBusinessPage({ onboarding = false }: { onboarding?: boolean }
     }
   }
 
+  if (session.user && !session.user.emailVerified) {
+    return (
+      <div className="panel new-business">
+        <div className="new-business-head">
+          <h1 className="page-title">Verify your email first</h1>
+          <p className="page-subtitle">
+            Open the link we emailed to <strong className="break-anywhere">{session.user.email}</strong>, then come back here
+            to set up your business. If a teammate invited you, opening their invitation link verifies your address too.
+          </p>
+        </div>
+        <p className="form-hint">
+          No email? Check your spam folder, or <ResendVerification />
+        </p>
+      </div>
+    )
+  }
+
   return (
     <div className="panel new-business">
       <div className="new-business-head">
         <h1 className="page-title">{onboarding ? 'Set up your business' : 'Create a business'}</h1>
         <p className="page-subtitle">
           {onboarding
-            ? "You'll be its owner. You can add stores, products and teammates next. If a teammate is adding you to their business instead, you'll see it here once they do."
+            ? "You'll be its owner. You can add stores, products and teammates next. If a teammate invites you to their business instead, open the link in their email."
             : "You'll be its owner. Its stores, products and sales are kept separate from your other businesses."}
         </p>
       </div>

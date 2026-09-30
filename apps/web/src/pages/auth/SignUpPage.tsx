@@ -1,8 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { authApi } from '../../api/account'
-import { ApiError } from '../../api/client'
 import { AuthLayout } from '../../components/AuthLayout'
-import { FormError, SubmitButton, TextField } from '../../components/Form'
+import { FormError, FormSuccess, SubmitButton, TextField } from '../../components/Form'
 import { Link } from '../../components/Link'
 import { useTouched } from '../../hooks/useTouched'
 import { safeNext, signInHref } from '../../lib/router'
@@ -12,12 +11,13 @@ import { emailError, errorMessage, newPasswordError, PASSWORD_HINT, requiredErro
 type Field = 'displayName' | 'email' | 'password'
 
 export function SignUpPage() {
-  const { session, reload } = useLoadedSession()
+  const { session } = useLoadedSession()
   const [displayName, setDisplayName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<{ message: string; emailTaken: boolean } | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [sentTo, setSentTo] = useState<string | null>(null)
   const touched = useTouched<Field>()
 
   const errors: Record<Field, string | null> = {
@@ -35,12 +35,33 @@ export function SignUpPage() {
     setError(null)
     try {
       await authApi.signUp(email.trim(), password, displayName.trim())
-      // A new account has no business yet: the app continues with onboarding.
-      await reload(() => (next === '/' ? '/businesses/new' : next))
+      // The same answer whether or not the address already had an account: never say which.
+      setSentTo(email.trim())
     } catch (err) {
-      setError({ message: errorMessage(err), emailTaken: err instanceof ApiError && err.status === 409 })
+      setError(errorMessage(err))
+    } finally {
       setBusy(false)
     }
+  }
+
+  if (sentTo) {
+    return (
+      <AuthLayout title="Check your inbox" subtitle={<span className="break-anywhere">We sent an email to {sentTo}.</span>}>
+        <div className="form-stack">
+          <FormSuccess>
+            Open the link in it to verify your address. If you already had an account, the email explains how to sign
+            in instead.
+          </FormSuccess>
+          <p className="form-hint">
+            You can sign in now and look around; creating or joining a business needs a verified address (an invitation
+            link verifies it too).
+          </p>
+          <Link className="button button-primary button-block" href={signInHref(next)}>
+            {next === '/invite' ? 'Sign in to accept the invitation' : 'Sign in'}
+          </Link>
+        </div>
+      </AuthLayout>
+    )
   }
 
   return (
@@ -61,17 +82,7 @@ export function SignUpPage() {
       }
     >
       <form className="form-stack" onSubmit={(e) => void onSubmit(e)} noValidate>
-        {error && (
-          <FormError>
-            {error.message}
-            {error.emailTaken && (
-              <>
-                {' '}
-                <Link href={signInHref(next)}>Sign in</Link> or <Link href="/forgot-password">reset your password</Link>.
-              </>
-            )}
-          </FormError>
-        )}
+        {error && <FormError>{error}</FormError>}
         <TextField
           label="Your name"
           name="name"

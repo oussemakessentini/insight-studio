@@ -18,6 +18,7 @@ export type Route =
   | { name: 'forgotPassword' }
   | { name: 'resetPassword' }
   | { name: 'invite' }
+  | { name: 'verifyEmail' }
   | { name: 'account' }
   | { name: 'newBusiness' }
   | { name: 'members' }
@@ -93,6 +94,7 @@ export function matchRoute(pathname: string): Route {
   if (path === '/forgot-password') return { name: 'forgotPassword' }
   if (path === '/reset-password') return { name: 'resetPassword' }
   if (path === '/invite') return { name: 'invite' }
+  if (path === '/verify-email') return { name: 'verifyEmail' }
   if (path === '/account') return { name: 'account' }
   if (path === '/businesses/new') return { name: 'newBusiness' }
   if (path === '/settings/members') return { name: 'members' }

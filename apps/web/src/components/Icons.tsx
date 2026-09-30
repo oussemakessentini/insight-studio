@@ -133,6 +133,13 @@ export const PlusIcon = (p: IconProps) => (
   </Icon>
 )
 
+export const MailIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <rect x="3.5" y="5.5" width="17" height="13" rx="2" />
+    <path d="m4 7 8 6 8-6" />
+  </Icon>
+)
+
 export const LockIcon = (p: IconProps) => (
   <Icon {...p}>
     <rect x="5" y="10.5" width="14" height="10" rx="2" />

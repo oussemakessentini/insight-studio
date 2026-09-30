@@ -5,6 +5,7 @@ import { Link } from '../components/Link'
 import { PageHeader } from '../components/PageHeader'
 import { SignOutButton } from '../components/SignOutButton'
 import { Panel } from '../components/Panel'
+import { ResendVerification } from '../components/VerifyEmailBanner'
 import { useTouched } from '../hooks/useTouched'
 import { useLoadedSession } from '../lib/session'
 import { confirmationError, errorMessage, newPasswordError, PASSWORD_HINT, requiredError } from '../lib/validation'
@@ -30,6 +31,18 @@ export function AccountPage() {
               <div>
                 <dt>Email</dt>
                 <dd className="break-anywhere">{user.email}</dd>
+              </div>
+              <div>
+                <dt>Status</dt>
+                <dd>
+                  {user.emailVerified ? (
+                    'Verified'
+                  ) : (
+                    <>
+                      Not verified yet. <ResendVerification />
+                    </>
+                  )}
+                </dd>
               </div>
             </dl>
           </Panel>

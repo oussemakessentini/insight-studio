@@ -38,6 +38,8 @@ export interface BusinessAccess {
   canManageCatalog: boolean
   canManageMembers: boolean
   readOnly: boolean
+  /** Whether the signed-in account verified its email address (true for the demo). */
+  emailVerified: boolean
 }
 
 export interface MetricValue {

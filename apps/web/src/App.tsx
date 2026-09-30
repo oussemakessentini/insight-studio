@@ -2,6 +2,7 @@ import { useCallback, useEffect, useEffectEvent, useLayoutEffect, useState, type
 import { ApiError, dashboardApi, setBusinessScope, UNAUTHORIZED_EVENT } from './api/client'
 import type { BusinessAccess, DashboardContext } from './api/types'
 import { DemoBanner } from './components/DemoBanner'
+import { ResendVerification, VerifyEmailBanner } from './components/VerifyEmailBanner'
 import { LogoMark, MenuIcon } from './components/Icons'
 import { Link } from './components/Link'
 import { ErrorState, Skeleton } from './components/Panel'
@@ -36,6 +37,7 @@ import {
 import { AccountPage } from './pages/AccountPage'
 import { ForgotPasswordPage } from './pages/auth/ForgotPasswordPage'
 import { InvitePage } from './pages/auth/InvitePage'
+import { VerifyEmailPage } from './pages/auth/VerifyEmailPage'
 import { ResetPasswordPage } from './pages/auth/ResetPasswordPage'
 import { SignInPage } from './pages/auth/SignInPage'
 import { SignUpPage } from './pages/auth/SignUpPage'
@@ -108,6 +110,8 @@ function Screen({ route }: { route: Route }) {
 
   // Invitation links work signed in or out, with or without a business.
   if (route.name === 'invite') return <InvitePage />
+  // Verification links work in any browser, signed in or out.
+  if (route.name === 'verifyEmail') return <VerifyEmailPage />
 
   if (isAuthRoute(route)) {
     // Signed-in users skip sign-in and sign-up; password recovery works either way.
@@ -332,6 +336,7 @@ function Shell({ active, hrefs, access, businessName, demo = false, children }: 
           {businessName && <span className="topbar-business">{businessName}</span>}
         </div>
         {demo && <DemoBanner />}
+        {!demo && <VerifyEmailBanner />}
         <main className="content">{children}</main>
       </div>
     </div>
@@ -354,6 +359,7 @@ function OnboardingFrame({ children }: { children: ReactNode }) {
           <SignOutButton className="button button-secondary button-small" />
         </div>
       </header>
+      <VerifyEmailBanner />
       <main className="onboarding-main">{children}</main>
     </div>
   )
@@ -386,6 +392,17 @@ function NotFound({ homeHref }: { homeHref: string }) {
 function NoAccess({ access, businessName, homeHref }: { access: BusinessAccess; businessName: string; homeHref: string }) {
   // readOnly is also true for signed-in VIEWERs; only the anonymous public demo has role DEMO.
   const demo = access.role === 'DEMO'
+  if (!demo && !access.emailVerified) {
+    return (
+      <div className="panel page-error">
+        <h1 className="page-title">Verify your email to continue</h1>
+        <ErrorState message="Until your email address is verified you can look around, but not change anything. Open the link we emailed you." />
+        <p className="page-error-action">
+          <ResendVerification variant="button" />
+        </p>
+      </div>
+    )
+  }
   return (
     <div className="panel page-error">
       <h1 className="page-title">{demo ? 'The demo is read-only' : "You don't have access to this page"}</h1>
