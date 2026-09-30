@@ -16,5 +16,35 @@ services:
       timeout: 5s
       retries: 10
 
+  # Cube semantic layer over the same database (model in services/analytics).
+  # Opt-in: docker compose --profile analytics up -d. Plain `up` starts only db.
+  # Dev mode (Playground, on-demand pre-aggregation builds, embedded Cube Store)
+  # is for local use only; see docs/analytics.md.
+  cube:
+    image: cubejs/cube:v1.7.46
+    profiles: ["analytics"]
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      CUBEJS_DB_TYPE: postgres
+      CUBEJS_DB_HOST: db
+      CUBEJS_DB_PORT: "5432"
+      CUBEJS_DB_NAME: ${POSTGRES_DB}
+      CUBEJS_DB_USER: ${POSTGRES_USER}
+      CUBEJS_DB_PASS: ${POSTGRES_PASSWORD}
+      CUBEJS_API_SECRET: ${CUBEJS_API_SECRET}
+      CUBEJS_DEV_MODE: "true"
+      CUBEJS_SCHEDULED_REFRESH_TIMEZONES: ${CUBEJS_SCHEDULED_REFRESH_TIMEZONES:-America/New_York}
+      CUBEJS_TELEMETRY: "false"
+      # Keep the embedded Cube Store's files inside the container: on the Windows
+      # bind mount, pre-aggregation uploads fail. Rollups are rebuilt on recreate.
+      CUBESTORE_DATA_DIR: /cube/cubestore/data
+      CUBESTORE_REMOTE_DIR: /cube/cubestore/remote
+    ports:
+      - "127.0.0.1:4000:4000"
+    volumes:
+      - ../services/analytics:/cube/conf
+
 volumes:
   postgres_data:
