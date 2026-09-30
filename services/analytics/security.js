@@ -61,8 +61,8 @@ function decodeSegment(segment) {
  * Throws a 401 CubejsHandlerError for a missing token and 403 for any invalid one.
  */
 function verifyToken(token, secret, nowSeconds = Math.floor(Date.now() / 1000)) {
-  if (typeof secret !== 'string' || secret.length < MIN_SECRET_LENGTH) {
-    // Fail closed: a missing or weak secret must never make tokens easier to forge.
+  if (typeof secret !== 'string' || secret.length < MIN_SECRET_LENGTH || secret.startsWith('change-me')) {
+    // Fail closed: a missing, weak or placeholder (infra/.env.example) secret must never make tokens easier to forge.
     throw forbidden('Cube is not configured with a valid CUBEJS_API_SECRET');
   }
   if (typeof token !== 'string' || token.length === 0) {

@@ -69,6 +69,8 @@ test('requires a positive integer businessId', () => {
 test('fails closed without a strong secret', () => {
   rejects(() => security.verifyToken(sign(valid(), { secret: 'short' }), 'short', NOW), 403);
   rejects(() => security.verifyToken(sign(valid()), undefined, NOW), 403);
+  const placeholder = 'change-me-to-a-long-random-secret';
+  rejects(() => security.verifyToken(sign(valid(), { secret: placeholder }), placeholder, NOW), 403);
 });
 
 test('checkAuth reads the secret from the environment', async () => {
