@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { membersApi, ROLE_LABELS, type Member } from '../api/account'
+import { invitationsApi, membersApi, ROLE_LABELS, type Invitation, type Member } from '../api/account'
 import type { Role } from '../api/types'
 import { FormError, FormSuccess, SelectField, SubmitButton, TextField } from '../components/Form'
 import { PageHeader } from '../components/PageHeader'
@@ -15,7 +15,7 @@ const ROLE_ORDER: Role[] = ['VIEWER', 'ADMIN', 'OWNER']
 
 const ROLE_HELP: Record<Role, string> = {
   VIEWER: 'Viewers see dashboards, sales and reports.',
-  ADMIN: 'Admins also import sales, set up stores and products, and add viewers and admins.',
+  ADMIN: 'Admins also import sales, set up stores and products, and invite viewers and admins.',
   OWNER: 'Owners also change roles, remove anyone and manage the business.',
 }
 
@@ -27,7 +27,7 @@ function permissions(myRole: Role | 'DEMO', myUserId: number, members: Member[])
   const owners = members.filter((m) => m.role === 'OWNER').length
   const isLastOwner = (m: Member) => m.role === 'OWNER' && owners <= 1
   return {
-    addableRoles: myRole === 'OWNER' ? ROLE_ORDER : myRole === 'ADMIN' ? ROLE_ORDER.filter((r) => r !== 'OWNER') : [],
+    invitableRoles: myRole === 'OWNER' ? ROLE_ORDER : myRole === 'ADMIN' ? ROLE_ORDER.filter((r) => r !== 'OWNER') : [],
     canChangeRole: (m: Member) => myRole === 'OWNER' && !isLastOwner(m),
     canRemove: (m: Member) => m.userId !== myUserId && (myRole === 'OWNER' || (myRole === 'ADMIN' && m.role === 'VIEWER')),
     canLeave: (m: Member) => m.userId === myUserId && !isLastOwner(m),
@@ -42,6 +42,7 @@ export function MembersPage({ context, refreshContext }: PageProps) {
   const [version, setVersion] = useState(0)
   const [notice, setNotice] = useState<Notice>(null)
   const members = useApi(`members|${businessId}|${version}`, (signal) => membersApi.list(businessId!, signal))
+  const invitations = useApi(`invitations|${businessId}|${version}`, (signal) => invitationsApi.list(businessId!, signal))
   const me = session.user!
   const myRole = context.access.role
 
@@ -54,10 +55,12 @@ export function MembersPage({ context, refreshContext }: PageProps) {
     <>
       <PageHeader eyebrow={context.business.name} title="Members" subtitle="Who can see and manage this business." />
 
-      <AddMember
+      <InviteMember
         businessId={businessId!}
-        roles={permissions(myRole, me.id, members.data ?? []).addableRoles}
-        onAdded={(member) => afterChange(`Added ${member.displayName || member.email} as ${ROLE_LABELS[member.role].toLowerCase()}.`)}
+        roles={permissions(myRole, me.id, members.data ?? []).invitableRoles}
+        onInvited={(invitation) =>
+          afterChange(`Invitation sent to ${invitation.email} as ${ROLE_LABELS[invitation.role].toLowerCase()}. It expires in 7 days.`)
+        }
       />
 
       <Panel title="People" subtitle={ROLE_HELP[myRole === 'DEMO' ? 'VIEWER' : myRole]}>
@@ -91,11 +94,39 @@ export function MembersPage({ context, refreshContext }: PageProps) {
           </AsyncContent>
         </div>
       </Panel>
+
+      <Panel title="Pending invitations" subtitle="Invitations that haven't been accepted yet. Each link works once.">
+        <AsyncContent
+          {...invitations}
+          isEmpty={(list) => list.length === 0}
+          emptyMessage="No pending invitations."
+          skeleton={<SkeletonRows rows={2} />}
+        >
+          {(list) => (
+            <InvitationTable
+              invitations={list}
+              myRole={myRole}
+              businessId={businessId!}
+              timeZone={context.business.timeZone}
+              onRevoked={(invitation) => afterChange(`Revoked the invitation to ${invitation.email}.`)}
+              onError={(message) => setNotice({ kind: 'error', message })}
+            />
+          )}
+        </AsyncContent>
+      </Panel>
     </>
   )
 }
 
-function AddMember({ businessId, roles, onAdded }: { businessId: number; roles: Role[]; onAdded: (member: Member) => void }) {
+function InviteMember({
+  businessId,
+  roles,
+  onInvited,
+}: {
+  businessId: number
+  roles: Role[]
+  onInvited: (invitation: Invitation) => void
+}) {
   const [email, setEmail] = useState('')
   const [role, setRole] = useState<Role>('VIEWER')
   const [busy, setBusy] = useState(false)
@@ -110,10 +141,10 @@ function AddMember({ businessId, roles, onAdded }: { businessId: number; roles: 
     setBusy(true)
     setError(null)
     try {
-      const member = await membersApi.add(businessId, email.trim(), role)
+      const invitation = await invitationsApi.invite(businessId, email.trim(), role)
       setEmail('')
       touched.reset()
-      onAdded(member ?? { userId: 0, email: email.trim(), displayName: '', role, since: '' })
+      onInvited(invitation)
     } catch (err) {
       setError(errorMessage(err))
     } finally {
@@ -124,14 +155,17 @@ function AddMember({ businessId, roles, onAdded }: { businessId: number; roles: 
   if (roles.length === 0) return null
 
   return (
-    <Panel title="Add a member" subtitle="They need an Insight Studio account first; email invitations are coming later.">
+    <Panel
+      title="Invite someone"
+      subtitle="We email them a link to join. They sign in or create an account with that address to accept."
+    >
       <form className="form-stack" onSubmit={(e) => void onSubmit(e)} noValidate>
         {error && <FormError>{error}</FormError>}
         <div className="form-inline">
           <TextField
             label="Email"
             type="email"
-            name="member-email"
+            name="invite-email"
             autoComplete="off"
             inputMode="email"
             spellCheck={false}
@@ -149,8 +183,8 @@ function AddMember({ businessId, roles, onAdded }: { businessId: number; roles: 
               </option>
             ))}
           </SelectField>
-          <SubmitButton busy={busy} busyLabel="Adding…" className="form-inline-button">
-            Add member
+          <SubmitButton busy={busy} busyLabel="Sending…" className="form-inline-button">
+            Send invitation
           </SubmitButton>
         </div>
         <p className="form-hint">{ROLE_HELP[role]}</p>
@@ -282,6 +316,79 @@ function MemberTable({ members, myUserId, myRole, businessId, timeZone, onChange
               </tr>
             )
           })}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+interface InvitationTableProps {
+  invitations: Invitation[]
+  myRole: Role | 'DEMO'
+  businessId: number
+  timeZone: string
+  onRevoked: (invitation: Invitation) => void
+  onError: (message: string) => void
+}
+
+function InvitationTable({ invitations, myRole, businessId, timeZone, onRevoked, onError }: InvitationTableProps) {
+  const [busy, setBusy] = useState<number | null>(null)
+  // Revoking an OWNER invitation needs the OWNER role (the API enforces the same).
+  const canRevoke = (invitation: Invitation) => myRole === 'OWNER' || (myRole === 'ADMIN' && invitation.role !== 'OWNER')
+
+  const revoke = async (invitation: Invitation) => {
+    setBusy(invitation.id)
+    try {
+      await invitationsApi.revoke(businessId, invitation.id)
+      onRevoked(invitation)
+    } catch (err) {
+      onError(errorMessage(err))
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  return (
+    <div className="table-scroll">
+      <table className="data-table members-table">
+        <thead>
+          <tr>
+            <th scope="col">Email</th>
+            <th scope="col">Role</th>
+            <th scope="col" className="hide-sm">
+              Expires
+            </th>
+            <th scope="col" className="num">
+              <span className="visually-hidden">Actions</span>
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {invitations.map((invitation) => (
+            <tr key={invitation.id}>
+              <td>
+                <span className="cell-primary break-anywhere">{invitation.email}</span>
+                <span className="cell-secondary break-anywhere">Invited by {invitation.invitedBy}</span>
+              </td>
+              <td>
+                <span className={`role-badge role-${invitation.role.toLowerCase()}`}>{ROLE_LABELS[invitation.role]}</span>
+              </td>
+              <td className="hide-sm nowrap">{formatSince(invitation.expiresAt, timeZone)}</td>
+              <td className="num">
+                {canRevoke(invitation) && (
+                  <button
+                    type="button"
+                    className="button button-secondary"
+                    disabled={busy !== null}
+                    onClick={() => void revoke(invitation)}
+                    aria-label={`Revoke the invitation to ${invitation.email}`}
+                  >
+                    {busy === invitation.id ? 'Revoking…' : 'Revoke'}
+                  </button>
+                )}
+              </td>
+            </tr>
+          ))}
         </tbody>
       </table>
     </div>

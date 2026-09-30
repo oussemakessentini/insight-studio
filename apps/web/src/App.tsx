@@ -35,6 +35,7 @@ import {
 } from './lib/session'
 import { AccountPage } from './pages/AccountPage'
 import { ForgotPasswordPage } from './pages/auth/ForgotPasswordPage'
+import { InvitePage } from './pages/auth/InvitePage'
 import { ResetPasswordPage } from './pages/auth/ResetPasswordPage'
 import { SignInPage } from './pages/auth/SignInPage'
 import { SignUpPage } from './pages/auth/SignUpPage'
@@ -104,6 +105,9 @@ function App() {
 
 function Screen({ route }: { route: Route }) {
   const { session, businessId } = useLoadedSession()
+
+  // Invitation links work signed in or out, with or without a business.
+  if (route.name === 'invite') return <InvitePage />
 
   if (isAuthRoute(route)) {
     // Signed-in users skip sign-in and sign-up; password recovery works either way.

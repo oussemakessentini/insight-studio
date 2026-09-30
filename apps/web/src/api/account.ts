@@ -51,6 +51,26 @@ export interface Member {
   since: string
 }
 
+/** An open invitation, as owners and admins see it. It never says whether the address has an account. */
+export interface Invitation {
+  id: number
+  email: string
+  role: Role
+  invitedBy: string
+  createdAt: string
+  expiresAt: string
+}
+
+/** What an invitation link offers (shown before accepting; no sign-in needed). */
+export interface InvitationPreview {
+  businessName: string
+  role: Role
+  invitedBy: string
+  /** Only the account with this email can accept. */
+  email: string
+  expiresAt: string
+}
+
 export interface CreatedStore {
   id: number
   code: string
@@ -106,12 +126,28 @@ const members = (businessId: number) => `/api/businesses/${businessId}/members`
 export const membersApi = {
   list: (businessId: number, signal?: AbortSignal) => getJson<Member[]>(members(businessId), {}, signal, { businessId }),
 
-  add: (businessId: number, email: string, role: Role) => postJson<Member>(members(businessId), { email, role }, { businessId }),
-
   changeRole: (businessId: number, userId: number, role: Role) =>
     patchJson<Member>(`${members(businessId)}/${userId}`, { role }, { businessId }),
 
   remove: (businessId: number, userId: number) => deleteJson(`${members(businessId)}/${userId}`, { businessId }),
+}
+
+const invitations = (businessId: number) => `/api/businesses/${businessId}/invitations`
+
+export const invitationsApi = {
+  list: (businessId: number, signal?: AbortSignal) =>
+    getJson<Invitation[]>(invitations(businessId), {}, signal, { businessId }),
+
+  invite: (businessId: number, email: string, role: Role) =>
+    postJson<Invitation>(invitations(businessId), { email, role }, { businessId }),
+
+  revoke: (businessId: number, invitationId: number) =>
+    deleteJson(`${invitations(businessId)}/${invitationId}`, { businessId }),
+
+  // Tokens go in request bodies, never in API URLs. Previewing works signed out.
+  preview: (token: string) => postJson<InvitationPreview>('/api/invitations/preview', { token }, credentials),
+
+  accept: (token: string) => postJson<Business>('/api/invitations/accept', { token }, account),
 }
 
 export const catalogApi = {

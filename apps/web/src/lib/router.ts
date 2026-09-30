@@ -17,6 +17,7 @@ export type Route =
   | { name: 'signUp' }
   | { name: 'forgotPassword' }
   | { name: 'resetPassword' }
+  | { name: 'invite' }
   | { name: 'account' }
   | { name: 'newBusiness' }
   | { name: 'members' }
@@ -91,6 +92,7 @@ export function matchRoute(pathname: string): Route {
   if (path === '/sign-up') return { name: 'signUp' }
   if (path === '/forgot-password') return { name: 'forgotPassword' }
   if (path === '/reset-password') return { name: 'resetPassword' }
+  if (path === '/invite') return { name: 'invite' }
   if (path === '/account') return { name: 'account' }
   if (path === '/businesses/new') return { name: 'newBusiness' }
   if (path === '/settings/members') return { name: 'members' }
