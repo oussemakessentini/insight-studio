@@ -1,15 +1,54 @@
+import { useState } from 'react'
+import { ImportHistory } from '../components/imports/ImportHistory'
+import { ImportUploader } from '../components/imports/ImportUploader'
 import { PageHeader } from '../components/PageHeader'
-import { EmptyState, Panel } from '../components/Panel'
+import '../styles/imports.css'
 import type { PageProps } from './types'
 
-// Placeholder registered by the integrator; owned and replaced by the CSV import feature branch.
-export function ImportsPage({ context }: PageProps) {
+/**
+ * CSV import of historical sales: validate a file (dry run), import it all-or-nothing, and browse
+ * earlier imports. Only reachable when the API has imports enabled (local development).
+ */
+export function ImportsPage({ context, onFiltersChange, href }: PageProps) {
+  const { business } = context
+  const [historyPage, setHistoryPage] = useState(0)
+  const [historyVersion, setHistoryVersion] = useState(0)
+
+  const onImported = () => {
+    // Show the new import at the top of the history.
+    setHistoryPage(0)
+    setHistoryVersion((v) => v + 1)
+  }
+
   return (
     <>
-      <PageHeader eyebrow={context.business.name} title="Import sales" />
-      <Panel title="Import sales">
-        <EmptyState message="CSV import is being built." />
-      </Panel>
+      <PageHeader
+        eyebrow={business.name}
+        title="Import sales"
+        subtitle={
+          <>
+            Load past receipts from a CSV file
+            <span className="page-subtitle-muted"> · Local development only</span>
+          </>
+        }
+      />
+
+      <ImportUploader
+        currency={business.currency}
+        timeZone={business.timeZone}
+        href={href}
+        onFiltersChange={onFiltersChange}
+        onImported={onImported}
+      />
+
+      <ImportHistory
+        page={historyPage}
+        onPage={setHistoryPage}
+        refreshKey={historyVersion}
+        currency={business.currency}
+        timeZone={business.timeZone}
+        batchHref={(id) => href(`/imports/${id}`)}
+      />
     </>
   )
 }
