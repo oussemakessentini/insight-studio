@@ -16,7 +16,6 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.access.intercept.RequestAuthorizationContext;
 import org.springframework.security.web.authentication.AnonymousAuthenticationFilter;
-import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.security.web.context.SecurityContextRepository;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.security.web.csrf.CsrfTokenRepository;
@@ -81,9 +80,10 @@ class SecurityConfig {
                 .build();
     }
 
+    /** The signed-in account lives in the (PostgreSQL-backed, shared) HTTP session as plain values. */
     @Bean
     SecurityContextRepository securityContextRepository() {
-        return new HttpSessionSecurityContextRepository();
+        return new SessionAccountContextRepository();
     }
 
     @Bean

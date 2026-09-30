@@ -64,8 +64,8 @@ class AuthFlowIntegrationTest extends PostgresIntegrationTest {
             assertThat((String) JsonPath.read(signUp.body(), "$.user.email")).isEqualTo("Owner@Example.com");
             assertThat((List<?>) JsonPath.read(signUp.body(), "$.memberships")).isEmpty();
             assertThat(signUp.headers().allValues("Set-Cookie")).anySatisfy(c ->
-                    assertThat(c).startsWith("JSESSIONID=").containsIgnoringCase("HttpOnly").containsIgnoringCase("SameSite=Lax"));
-            assertThat(client.cookie("JSESSIONID")).isNotBlank();
+                    assertThat(c).startsWith(HttpApiClient.SESSION_COOKIE + "=").containsIgnoringCase("HttpOnly").containsIgnoringCase("SameSite=Lax"));
+            assertThat(client.cookie(HttpApiClient.SESSION_COOKIE)).isNotBlank();
             assertThat(client.csrfToken()).as("CSRF token rotated on sign-in").isNotEqualTo(anonymousToken);
 
             HttpResponse<String> me = client.get("/api/session");
@@ -113,7 +113,7 @@ class AuthFlowIntegrationTest extends PostgresIntegrationTest {
 
             Map<String, String> signedInCookies = client.cookies();
             expect(client.postJson("/api/auth/sign-out", "{}"), 204);
-            assertThat(client.cookie("JSESSIONID")).isNull();
+            assertThat(client.cookie(HttpApiClient.SESSION_COOKIE)).isNull();
             HttpResponse<String> after = client.get("/api/dashboard/summary");
             expect(after, 401);
             assertThat((String) JsonPath.read(after.body(), "$.detail")).isEqualTo("Sign in to continue.");
@@ -131,7 +131,7 @@ class AuthFlowIntegrationTest extends PostgresIntegrationTest {
             expect(client.postJson("/api/auth/sign-up",
                     "{\"email\":\"a@example.com\",\"password\":\"%s\",\"displayName\":\"A\"}".formatted(PASSWORD)), 201);
             expect(client.postJson("/api/businesses", "{\"name\":\"Shop\",\"currency\":\"USD\",\"timeZone\":\"UTC\"}"), 201);
-            String first = client.cookie("JSESSIONID");
+            String first = client.cookie(HttpApiClient.SESSION_COOKIE);
             Map<String, String> firstCookies = client.cookies();
 
             HttpResponse<String> signIn = client.postJson("/api/auth/sign-in",
@@ -139,7 +139,7 @@ class AuthFlowIntegrationTest extends PostgresIntegrationTest {
             expect(signIn, 200);
             assertThat((String) JsonPath.read(signIn.body(), "$.memberships[0].slug")).isEqualTo("shop");
             assertThat((String) JsonPath.read(signIn.body(), "$.memberships[0].role")).isEqualTo("OWNER");
-            assertThat(client.cookie("JSESSIONID")).isNotBlank().isNotEqualTo(first);
+            assertThat(client.cookie(HttpApiClient.SESSION_COOKIE)).isNotBlank().isNotEqualTo(first);
             expect(client.get("/api/businesses"), 200);
 
             // Session fixation: the pre-sign-in id no longer identifies a session.

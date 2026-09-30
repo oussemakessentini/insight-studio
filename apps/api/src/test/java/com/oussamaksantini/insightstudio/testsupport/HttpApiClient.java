@@ -17,6 +17,9 @@ import java.util.stream.Collectors;
  */
 public final class HttpApiClient implements AutoCloseable {
 
+    /** Name of the session cookie (Spring Session). */
+    public static final String SESSION_COOKIE = "SESSION";
+
     private final HttpClient http = HttpClient.newHttpClient();
     private final String base;
     private final Map<String, String> cookies = new LinkedHashMap<>();

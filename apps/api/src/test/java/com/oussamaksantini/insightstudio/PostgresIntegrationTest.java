@@ -17,6 +17,6 @@ import org.springframework.context.annotation.Import;
 @Import({TestcontainersConfiguration.class, TestSupportConfiguration.class})
 public abstract class PostgresIntegrationTest {
 
-    protected static final String TRUNCATE_ALL = "TRUNCATE password_reset_tokens, memberships, users, import_batches, "
+    protected static final String TRUNCATE_ALL = "TRUNCATE spring_session, password_reset_tokens, memberships, users, import_batches, "
             + "sale_items, sales, products, stores, businesses RESTART IDENTITY CASCADE";
 }

@@ -245,7 +245,7 @@ class AccountIntegrationTest extends PostgresIntegrationTest {
             try (HttpApiClient current = browser(); HttpApiClient other = browser()) {
                 expect(signIn(current, EMAIL, TestAccounts.PASSWORD), 200);
                 expect(signIn(other, EMAIL, TestAccounts.PASSWORD), 200);
-                String before = current.cookie("JSESSIONID");
+                String before = current.cookie(HttpApiClient.SESSION_COOKIE);
 
                 HttpResponse<String> wrong = current.postJson("/api/auth/password/change",
                         "{\"currentPassword\":\"not my password\",\"newPassword\":\"%s\"}".formatted(NEW_PASSWORD));
@@ -255,7 +255,7 @@ class AccountIntegrationTest extends PostgresIntegrationTest {
 
                 expect(current.postJson("/api/auth/password/change",
                         "{\"currentPassword\":\"%s\",\"newPassword\":\"%s\"}".formatted(TestAccounts.PASSWORD, NEW_PASSWORD)), 204);
-                assertThat(current.cookie("JSESSIONID")).isNotEqualTo(before);
+                assertThat(current.cookie(HttpApiClient.SESSION_COOKIE)).isNotEqualTo(before);
                 expect(current.get("/api/businesses"), 200);
                 HttpResponse<String> session = current.get("/api/session");
                 assertThat((Boolean) JsonPath.read(session.body(), "$.authenticated")).isTrue();

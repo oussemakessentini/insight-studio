@@ -3,14 +3,10 @@ package com.oussamaksantini.insightstudio.security;
 import com.oussamaksantini.insightstudio.account.AccountPrincipal;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import java.util.List;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
-import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.context.SecurityContextHolderStrategy;
-import org.springframework.security.web.authentication.logout.CookieClearingLogoutHandler;
 import org.springframework.security.web.authentication.logout.SecurityContextLogoutHandler;
 import org.springframework.security.web.authentication.session.ChangeSessionIdAuthenticationStrategy;
 import org.springframework.security.web.context.SecurityContextRepository;
@@ -24,8 +20,6 @@ import org.springframework.stereotype.Component;
  */
 @Component
 public class SessionAuthentication {
-
-    static final String SESSION_COOKIE = "JSESSIONID";
 
     private final SecurityContextRepository contextRepository;
     private final CsrfTokenRepository csrfTokens;
@@ -53,13 +47,15 @@ public class SessionAuthentication {
         signIn(principal, request, response);
     }
 
-    /** Invalidates the session, clears the session cookie and issues a fresh CSRF token. */
+    /**
+     * Invalidates the session (deleting it from the session store, so it ends on every instance) and
+     * issues a fresh CSRF token. Spring Session expires the session cookie.
+     */
     public void signOut(HttpServletRequest request, HttpServletResponse response) {
         Authentication authentication = holder.getContext().getAuthentication();
         SecurityContextLogoutHandler logout = new SecurityContextLogoutHandler();
         logout.setSecurityContextRepository(contextRepository);
         logout.logout(request, response, authentication);
-        new CookieClearingLogoutHandler(SESSION_COOKIE).logout(request, response, authentication);
         rotateCsrfToken(request, response);
     }
 
@@ -78,7 +74,6 @@ public class SessionAuthentication {
     }
 
     private static Authentication authentication(AccountPrincipal principal) {
-        return UsernamePasswordAuthenticationToken.authenticated(
-                principal, null, List.of(new SimpleGrantedAuthority("ROLE_USER")));
+        return SessionAccountContextRepository.authentication(principal);
     }
 }
