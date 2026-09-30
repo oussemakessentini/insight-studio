@@ -1,0 +1,46 @@
+/* Store pages. Everything else comes from index.css (tables, bars, deltas, panels). */
+
+/* Share-of-revenue bar inside the stores table: one hue, labelled at the tip. */
+.stores-share {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 140px;
+}
+
+.stores-share-track {
+  flex: 1;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--blue-50);
+}
+
+.stores-share-fill {
+  height: 100%;
+  border-radius: 0 4px 4px 0;
+  background: var(--blue-500);
+}
+
+.stores-share-value {
+  min-width: 44px;
+  text-align: right;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Pills in the "vs prev." column sit flush right like the other numbers. */
+.stores-table .delta {
+  font-size: 13px;
+}
+
+/* A store usually has more categories than the dashboard has stores: keep the list compact
+   so it sits beside the revenue chart without towering over it. */
+.stores-category-panel .store-bars {
+  gap: 12px;
+}
+
+.stores-table tr.is-muted td:first-child .cell-primary {
+  color: var(--text-secondary);
+}
