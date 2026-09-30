@@ -75,12 +75,15 @@ Password-reset and invitation links are emailed over SMTP; the API never logs th
 | `MAIL_FROM` | required | Sender, e.g. `Insight Studio <no-reply@example.com>`; the domain needs SPF/DKIM for the provider |
 | `WEB_BASE_URL` | required, `https://` | Public address of the web app; links point to `/reset-password` and `/invite` there |
 
-Emails leave asynchronously after the request, from a queue of 500 on two threads; a failure is
-logged (without content) and not retried. The health endpoint does not depend on the mail server.
+Emails wait in the `mail_outbox` table and are sent by every API instance's worker: they survive
+restarts and outages, are retried five times over about three hours, and their bodies are erased
+once sent or abandoned ([auth.md](auth.md#email)). Watch for rows with `status = 'FAILED'` (and a
+growing number of `PENDING` ones): they mean the mail server refuses or cannot be reached;
+`last_error` holds its answer. The health endpoint does not depend on the mail server.
 
-## Sessions and rate limits
+## Sessions, rate limits and the mail outbox
 
-Both live in the application database (Flyway V5, V6): any number of API instances behind the
+All three live in the application database (Flyway V5, V6, V8): any number of API instances behind the
 proxy share them, and restarts or rolling deployments keep users signed in. No sticky sessions or
 extra store are needed. Expired sessions are purged every minute by each instance; rate-limit rows
 older than a day are purged as the API runs.

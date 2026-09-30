@@ -192,3 +192,12 @@ Superseding parts of §1, §5 and §9; details in [auth.md](auth.md) and [produc
   (Flyway V7), so inviting never reveals whether an account exists.
 - Forwarded headers are trusted only from `TRUSTED_PROXIES`; the `prod` profile requires Secure
   cookies and an https `WEB_BASE_URL`.
+
+## 11. Email verification and the mail outbox (later phase)
+
+- Sign-up answers `202` with no body for every valid request and signs no one in (it used to answer
+  `201` with a session, or `409` for a taken address). Accounts start unverified.
+- Unverified accounts cannot create businesses or make business writes (`403`); a verification
+  link, an accepted invitation to the address, or a password reset by email verifies it (Flyway V9).
+- Account emails go through `mail_outbox` (Flyway V8) with bounded retries.
+

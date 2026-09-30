@@ -45,6 +45,8 @@ Browser ──> Vite dev server (:5173) ──/api proxy──> Spring Boot API 
 | `spring_session`, `spring_session_attributes` | Sessions (V5), shared by every API instance and kept across restarts |
 | `rate_limit_hits` | Rate limits (V6): hashed buckets for sign-in, sign-up, recovery and invitations |
 | `invitations` | Invitations (V7): SHA-256 of a single-use token, 7-day expiry, invited email and role |
+| `mail_outbox` | Account emails waiting to be sent (V8); bodies erased once sent or abandoned |
+| `email_verification_tokens` | Email verification (V9): SHA-256 of a single-use token, 24-hour expiry; `users.email_verified_at` |
 
 Revenue is always `SUM(quantity × sale_items.unit_price)`, so historical revenue is unaffected when
 a product's list price changes. Days, weeks and months are bucketed in the business's time zone.
@@ -91,7 +93,7 @@ a product's list price changes. Days, weeks and months are bucketed in the busin
 | `/stores/{id}` | Store: metrics vs the previous period, revenue trend, category mix and top products. Store pages ignore the global store filter |
 | `/reports` | Monthly and Categories reports (tab kept in the URL) with totals rows that equal the dashboard, partial months marked, and CSV export |
 | `/imports`, `/imports/{id}` | CSV import (owners and admins): validate (dry run) with a line-by-line error table, import, and history |
-| `/sign-in`, `/sign-up`, `/forgot-password`, `/reset-password` | Accounts and recovery |
+| `/sign-in`, `/sign-up`, `/forgot-password`, `/reset-password`, `/verify-email` | Accounts, recovery and email verification |
 | `/businesses/new` | Create a business (shown after sign-up when you have none); the sidebar switches between your businesses |
 | `/settings/catalog` | Add stores and products (owners and admins) |
 | `/settings/members` | Members, roles and invitations (owners and admins) |
@@ -158,13 +160,16 @@ npm install
 npm run dev
 ```
 
-**4. First account.** Open http://localhost:5173/sign-up, create an account (passwords are 12 to
-72 characters), then create a business; you become its owner. Add stores and products under
+**4. First account.** Open http://localhost:5173/sign-up and create an account (passwords are 12 to
+72 characters). Open the verification link from the email in Mailpit (http://localhost:8025), sign
+in, then create a business; you become its owner. (Until the address is verified you can sign in and
+look around, but not create or change a business.) Add stores and products under
 Catalog, then import sales under Import. With the `demo` profile, signed-out visitors browse the
 demo business read-only; without it they are sent to sign in.
 
 To invite someone, open Members and send an invitation; they get an email with a link to join.
-Password-reset and invitation emails go to Mailpit, the local mail catcher started by
+Verification, password-reset and invitation emails go through a persistent outbox (retried if the
+mail server is down, kept across restarts) to Mailpit, the local mail catcher started by
 `docker compose up -d`: read them at http://localhost:8025. Nothing leaves your machine, and links
 are never written to the API log. Account settings:
 
@@ -235,7 +240,8 @@ curl walkthrough: [docs/auth.md](docs/auth.md).
 | Account endpoint | Does |
 |---|---|
 | `GET /api/session` | Current user, memberships and demo info; issues the CSRF cookie |
-| `POST /api/auth/sign-up`, `/sign-in`, `/sign-out` | Accounts and sessions (sign-up and sign-in are rate limited) |
+| `POST /api/auth/sign-up`, `/sign-in`, `/sign-out` | Accounts and sessions (sign-up always answers `202`, whether or not the address has an account; both are rate limited) |
+| `POST /api/auth/verify-email`, `/verify-email/resend` | Verify an address from its emailed link; send a new link |
 | `POST /api/auth/password/change`, `/password/forgot`, `/password/reset` | Password change and recovery (single-use tokens, 30 minutes) |
 | `GET`, `POST /api/businesses`; `PATCH /api/businesses/{id}` | Your businesses; create one (you become OWNER); rename (OWNER) |
 | `/api/businesses/{id}/members[/{userId}]` | List, change role, remove (owners and admins, with last-owner protection) |
@@ -375,8 +381,14 @@ running. They do not touch your local database. The tests cover:
 - rate limits: sign-up, sign-in, recovery and invitations; shared across instances and restarts,
   sliding windows, and no bypass by concurrent requests or spoofed `X-Forwarded-For`
 - trusted proxies, and the `prod` profile (Secure `__Host-` cookies; refuses unsafe settings)
-- email: reset and invitation links delivered over real SMTP to a Mailpit container, and never
-  written to the log
+- email: verification, reset, notice and invitation emails delivered over real SMTP to a Mailpit
+  container, and never written to the log
+- email verification: single use, expiry, replaced links, a link verifying only its own account,
+  unverified accounts refused every business write, invitations and resets verifying the address,
+  and sign-up answering the same for existing addresses without changing them
+- mail outbox: emails queued while the mail server is down sent after a restart, a dead worker's
+  lease taken over, bounded retries ending in FAILED with the body erased, expired links dropped,
+  two workers never sending an email twice
 
 ## Roadmap
 
@@ -388,12 +400,14 @@ running. They do not touch your local database. The tests cover:
   business isolation on every endpoint; password recovery by email
 - Email invitations; sessions and rate limits in PostgreSQL for several API instances; trusted
   proxy handling and a `prod` profile that requires HTTPS settings
+- Email verification, sign-up that never reveals existing accounts, and a persistent mail outbox
+  with bounded retries
 - CSV import for owners and admins of their own business (never the public demo)
 - Private Cube analytics behind the API, scoped to the member's business
 
 **Later:**
 
-- Email verification at sign-up, and account deletion
+- Account deletion and email address changes
 - Business settings UI (rename, time zone)
 - Saved reports (named, reusable report definitions)
 - Dashboard panels served from Cube

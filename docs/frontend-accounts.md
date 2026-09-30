@@ -67,7 +67,8 @@ Owners and admins invite by email from Settings › Members; the invitee gets a 
 - moves the token from the address bar into this tab's `sessionStorage` at once (it never stays in
   history or bookmarks) and previews the invitation (`POST /api/invitations/preview`);
 - signed out: offers "Sign in to accept" and "Create an account", both returning to `/invite`
-  through `?next=` (sign-up with a pending invitation goes back to it instead of onboarding);
+  through `?next=` (after sign-up, "Sign in to accept the invitation" leads back to it; accepting
+  verifies the address, so no separate verification step is needed);
 - signed in with the invited address: "Join {business}" accepts, selects the joined business and
   opens its dashboard;
 - signed in with another address: explains which address the invitation is for and offers to sign out;
@@ -76,9 +77,21 @@ Owners and admins invite by email from Settings › Members; the invitee gets a 
 `index.html` sets `<meta name="referrer" content="same-origin">`, so reset and invitation URLs are
 never sent to other sites.
 
+## Sign-up and email verification
+
+- Sign-up always ends on "Check your inbox" for the address entered, whether or not it already had
+  an account (the API answers `202` either way and signs no one in); the page offers sign-in.
+- `/verify-email?token=…` takes the token out of the address bar, verifies it once (one request per
+  token, even under StrictMode) and works signed in or out. A used, replaced or expired link shows
+  one message with a way to get a new one.
+- Signed-in accounts with `user.emailVerified: false` see a banner ("Verify … to create or change a
+  business", with "Send a new link"); onboarding shows the same explanation instead of the business
+  form; role-gated pages say "Verify your email to continue"; the Account page shows the status.
+
 ## Routes
 
-`/sign-in`, `/sign-up`, `/forgot-password`, `/reset-password?token=…`, `/invite?token=…`, `/account`,
+`/sign-in`, `/sign-up`, `/forgot-password`, `/reset-password?token=…`, `/verify-email?token=…`,
+`/invite?token=…`, `/account`,
 `/businesses/new`, `/settings/members`, `/settings/catalog`, plus the existing pages. `?next=` is only
 followed for same-site paths (never `//host` or absolute URLs).
 

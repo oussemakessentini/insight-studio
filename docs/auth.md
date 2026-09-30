@@ -19,12 +19,13 @@ the implementation in `apps/api` and how to use it locally.
 - **CSRF**: the API sets a readable `XSRF-TOKEN` cookie; every `POST`/`PUT`/`PATCH`/`DELETE` must
   send the same value in the `X-XSRF-TOKEN` header, otherwise `403` (problem detail mentioning
   CSRF). Only the header is accepted (no `_csrf` form field). `GET /api/session` always sends the
-  cookie; sign-in, sign-up, password change and sign-out issue a new one, so read the cookie again
+  cookie; sign-in, password change and sign-out issue a new one, so read the cookie again
   after those calls.
 - **Secure cookies**: off by default so plain `http://localhost` works. The `prod` profile turns
   them on and refuses to start without them; see [production.md](production.md).
 - **Deny by default**: everything needs a session except `GET /api/session`,
-  `POST /api/auth/sign-up|sign-in|password/forgot|password/reset`, `POST /api/invitations/preview`,
+  `POST /api/auth/sign-up|sign-in|password/forgot|password/reset|verify-email`,
+  `POST /api/invitations/preview`,
   `GET /actuator/health`, and —
   only when the public demo is enabled — `GET` on the business read endpoints (`/api/dashboard/**`,
   `/api/products/**`, `/api/sales/**`, `/api/stores/**`, `/api/reports/**`, `/api/analytics/**`).
@@ -43,7 +44,17 @@ the implementation in `apps/api` and how to use it locally.
 - Emails are trimmed and compared case-insensitively (unique index on `lower(email)`).
 - Sign-in answers `401 "Invalid email or password."` for an unknown email and for a wrong
   password alike, and does the same bcrypt work in both cases.
-- Rate limits: see [Rate limits](#rate-limits) (sign-in, sign-up, recovery and invitations).
+- **Sign-up**: `POST /api/auth/sign-up {email, password, displayName}` validates the input (`400`)
+  and the per-IP limit (`429`), then **always answers `202` with no body and signs no one in**, so it
+  never reveals whether an address has an account:
+  - a new address gets an unverified account and a verification link ([below](#email-verification));
+  - an existing address is left exactly as it is (password, name, verification, sessions); its
+    owner gets a "you already have an account" email with sign-in and reset links (at most 3 an
+    hour per address), and the password is hashed anyway so the answer takes as long.
+
+  The new account then signs in with its password, verified or not.
+- Rate limits: see [Rate limits](#rate-limits) (sign-in, sign-up, recovery, verification and
+  invitations).
 - **Forgot password**: `POST /api/auth/password/forgot {email}` always answers `202`. When the
   email has an account, a random 32-byte token (URL-safe base64) is generated, only its SHA-256 is
   stored in `password_reset_tokens`, it expires after 30 minutes, and requesting a new link
@@ -97,6 +108,27 @@ lock the business row, so two concurrent requests cannot both remove "the other"
 Store codes and SKUs are 1–50 characters of letters, digits, `.`, `_`, `-` (they are matched
 exactly by CSV imports) and unique within a business (`409` otherwise).
 
+## Email verification
+
+An account proves it controls its address before it can change anything:
+
+- Sign-up emails a link to `WEB_BASE_URL` + `/verify-email?token=...`: 32 random bytes, only the
+  SHA-256 is stored (`email_verification_tokens`, Flyway V9), single use, expires after 24 hours; a
+  new link invalidates older ones.
+- `POST /api/auth/verify-email {token}` is public (`204`, or
+  `400 "This verification link is invalid or has expired."`). It verifies the account the token was
+  sent to, whoever opens it and in whichever browser; it signs no one in.
+- `POST /api/auth/verify-email/resend` (signed in) emails a new link; `202`, nothing for an
+  account that is already verified, `429` after 3 an hour.
+- Accepting an invitation sent to the address, or resetting the password through an emailed link,
+  verifies the address too (both prove the same thing).
+- **Unverified accounts** can sign in and read, but get `403 "Verify your email address first..."`
+  for creating a business and for every business write: imports, stores and products, invitations,
+  member changes, renaming (all role-gated actions check it). Leaving a business stays allowed.
+  `GET /api/session` reports `user.emailVerified`, and the dashboard context
+  `access.emailVerified` (with `readOnly: true` and no `can*` flags until verified).
+- Accounts that existed before verification was introduced were marked verified by the migration.
+
 ## Invitations
 
 People join a business only through invitations; there is no way to add an account directly (so
@@ -133,6 +165,9 @@ per-bucket advisory lock. A limit reached answers `429` with `Retry-After` (seco
 |---|---|---|
 | Sign-in per email / per IP | failed sign-ins and failed password changes | 5 / 20 per 15 min |
 | Sign-up per IP | every attempt, successful or not | 10 per hour |
+| "Already have an account" notices per address | notices sent (further sign-ups still answer `202`) | 3 per hour |
+| Verification emails per account | resends | 3 per hour |
+| Verification token use per IP | every attempt | 30 per 15 min |
 | Reset request per IP | every request | 10 per hour |
 | Reset email per address | emails sent (further requests still answer `202`, nothing is sent) | 3 per hour |
 | Reset token use per IP | every attempt | 20 per 15 min |
@@ -144,11 +179,25 @@ from the TCP connection unless it is a trusted proxy ([production.md](production
 
 ## Email
 
-Password resets and invitations are sent as plain text over SMTP (Spring Boot `spring.mail`),
-asynchronously on a small bounded queue and only after the database transaction that stored their
-token commits, so response times reveal nothing and a slow mail server cannot slow the API down.
-Neither the email body nor the link is ever logged; a failed delivery logs only the kind of email
-and the SMTP error.
+Verification, password-reset, "already have an account" and invitation emails are plain text sent
+over SMTP (Spring Boot `spring.mail`) through a **persistent outbox** (`mail_outbox`, Flyway V8):
+
+- The email is written in the same transaction as the token it carries, so it exists exactly when
+  the token does, and the request never waits for the mail server.
+- A worker on every API instance (`MailOutboxWorker`, every 2 s) claims due emails with
+  `FOR UPDATE SKIP LOCKED` and a 2-minute lease: instances share the work without sending an email
+  twice, and emails claimed by an instance that died are picked up again when the lease ends.
+  Queued emails therefore survive restarts, deployments and mail server outages.
+- A failed attempt is retried after 30 s, 2 min, 10 min, 30 min and 2 h; after the sixth attempt the
+  email is marked `FAILED`. An email whose link expired before it could be sent is marked `EXPIRED`
+  instead of sent.
+- The body (with the secret link) is erased as soon as the email is sent, failed or expired, and
+  finished rows are deleted after 7 days. Logs name the outbox id, the kind of email and the SMTP
+  error, never the body, a link or a token. Delivery is at-least-once: an instance that dies right
+  after the SMTP server accepted an email can cause it to be sent again.
+
+Settings (`insight.mail.outbox.*`): `enabled`, `poll-interval`, `retry-delays`, `batch-size`,
+`lease`, `retention`.
 
 In development the defaults (`localhost:1025`) reach Mailpit from `infra/compose.yaml`; open
 http://localhost:8025 to read the emails. Production settings: [production.md](production.md#email).
@@ -177,9 +226,14 @@ http://localhost:8025 to read the emails. Production settings: [production.md](p
      http://localhost:8080/api/auth/sign-up
    ```
 
-3. Sign-up rotates the CSRF token: read it again, then create a business (you become its OWNER):
+3. Open the verification link from the email in Mailpit (http://localhost:8025), then sign in
+   (sign-in rotates the CSRF token: read it again) and create a business (you become its OWNER):
 
    ```bash
+   TOKEN=$(awk '$6=="XSRF-TOKEN"{print $7}' jar.txt)
+   curl -c jar.txt -b jar.txt -H "X-XSRF-TOKEN: $TOKEN" -H 'Content-Type: application/json' \
+     -d '{"email":"me@example.com","password":"a long passphrase"}' \
+     http://localhost:8080/api/auth/sign-in
    TOKEN=$(awk '$6=="XSRF-TOKEN"{print $7}' jar.txt)
    curl -c jar.txt -b jar.txt -H "X-XSRF-TOKEN: $TOKEN" -H 'Content-Type: application/json' \
      -d '{"name":"My Shop","currency":"EUR","timeZone":"Europe/Paris"}' \
@@ -191,8 +245,8 @@ http://localhost:8025 to read the emails. Production settings: [production.md](p
    (`POST /api/imports`, see [csv-import.md](csv-import.md)). With a single business no
    `X-Business-Id` header is needed.
 
-In the web app all of this happens through the sign-up and onboarding screens. Reset and
-invitation emails land in Mailpit (http://localhost:8025).
+In the web app all of this happens through the sign-up and onboarding screens. Verification,
+reset and invitation emails land in Mailpit (http://localhost:8025).
 
 ## Tables
 
@@ -205,4 +259,5 @@ Flyway `V4__create_accounts.sql`:
 
 Later migrations: `V5` `spring_session`, `spring_session_attributes` (sessions); `V6`
 `rate_limit_hits`; `V7` `invitations` (`token_sha256` unique, `expires_at`, `accepted_at`,
-`revoked_at`; at most one open invitation per business and address).
+`revoked_at`; at most one open invitation per business and address); `V8` `mail_outbox`; `V9`
+`users.email_verified_at` and `email_verification_tokens`.
