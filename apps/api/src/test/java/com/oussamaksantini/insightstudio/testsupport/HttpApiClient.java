@@ -42,6 +42,16 @@ public final class HttpApiClient implements AutoCloseable {
                 .POST(HttpRequest.BodyPublishers.ofString(json)), csrfToken());
     }
 
+    /** POSTs JSON with the CSRF header and extra headers given as name, value pairs. */
+    public HttpResponse<String> postJson(String path, String json, String... headers) throws IOException, InterruptedException {
+        HttpRequest.Builder builder = request(path).header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(json));
+        for (int i = 0; i < headers.length; i += 2) {
+            builder.header(headers[i], headers[i + 1]);
+        }
+        return send(builder, csrfToken());
+    }
+
     /** POSTs JSON without any CSRF header. */
     public HttpResponse<String> postJsonWithoutCsrf(String path, String json) throws IOException, InterruptedException {
         return send(request(path).header("Content-Type", "application/json")

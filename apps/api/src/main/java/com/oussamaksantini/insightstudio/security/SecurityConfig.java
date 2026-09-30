@@ -3,8 +3,10 @@ package com.oussamaksantini.insightstudio.security;
 import com.oussamaksantini.insightstudio.account.UserQueries;
 import com.oussamaksantini.insightstudio.tenancy.DemoProperties;
 import jakarta.servlet.DispatcherType;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.Ordered;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationTrustResolver;
 import org.springframework.security.authentication.AuthenticationTrustResolverImpl;
@@ -84,6 +86,18 @@ class SecurityConfig {
     @Bean
     SecurityContextRepository securityContextRepository() {
         return new SessionAccountContextRepository();
+    }
+
+    /**
+     * Runs before every other filter (sessions, security), so rate limits and HSTS see the client
+     * address and scheme resolved from trusted proxies only.
+     */
+    @Bean
+    FilterRegistrationBean<TrustedProxyFilter> trustedProxyFilter(SecurityProperties properties) {
+        FilterRegistrationBean<TrustedProxyFilter> registration =
+                new FilterRegistrationBean<>(new TrustedProxyFilter(properties.trustedProxies()));
+        registration.setOrder(Ordered.HIGHEST_PRECEDENCE);
+        return registration;
     }
 
     @Bean
