@@ -1,5 +1,6 @@
 package com.oussamaksantini.insightstudio.store;
 
+import com.oussamaksantini.insightstudio.business.Business;
 import com.oussamaksantini.insightstudio.common.web.ApiException;
 import com.oussamaksantini.insightstudio.dashboard.DashboardService;
 import com.oussamaksantini.insightstudio.dashboard.dto.RevenueSeriesResponse;
@@ -16,9 +17,11 @@ import com.oussamaksantini.insightstudio.store.dto.StoreDetailResponse.CategoryS
 import com.oussamaksantini.insightstudio.store.dto.StoreInfo;
 import com.oussamaksantini.insightstudio.store.dto.StoreListResponse;
 import com.oussamaksantini.insightstudio.store.dto.StoreListResponse.StorePerformance;
+import com.oussamaksantini.insightstudio.tenancy.Role;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.regex.Pattern;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -26,10 +29,15 @@ import org.springframework.transaction.annotation.Transactional;
  * Per-store performance. A store's revenue series and top products are exactly the dashboard's
  * restricted to that store, so they are delegated to {@link DashboardService} rather than
  * duplicated; the two views agree by construction.
+ *
+ * <p>Stores are created by ADMINs and OWNERs of the current business (catalog setup).
  */
 @Service
 @Transactional(readOnly = true)
 public class StoreService {
+
+    /** Store codes are matched exactly by CSV imports, so they are kept simple. */
+    static final Pattern CODE = Pattern.compile("^[A-Za-z0-9][A-Za-z0-9._-]{0,49}$");
 
     private final ReportingContext reporting;
     private final StoreRepository stores;
@@ -103,5 +111,35 @@ public class StoreService {
     /** Same shape and rules as {@code /api/dashboard/top-products?storeId=}; unknown stores are a 404. */
     public TopProductsResponse topProducts(long storeId, LocalDate from, LocalDate to, int limit) {
         return dashboard.topProducts(from, to, storeId, limit);
+    }
+
+    /** ADMIN+: adds a store to the current business; 409 when the code is taken there. */
+    @Transactional
+    public StoreInfo create(String code, String name, String city) {
+        Business business = reporting.currentBusiness(Role.ADMIN);
+        String cleanCode = code == null ? "" : code.strip();
+        if (!CODE.matcher(cleanCode).matches()) {
+            throw ApiException.badRequest(
+                    "'code' must be 1 to 50 letters, digits, '.', '_' or '-', starting with a letter or digit.");
+        }
+        String cleanName = text(name, "name", 200, true);
+        String cleanCity = text(city, "city", 100, false);
+        long id = queries.insertStore(business.getId(), cleanCode, cleanName, cleanCity)
+                .orElseThrow(() -> ApiException.conflict("A store with code '%s' already exists.".formatted(cleanCode)));
+        return new StoreInfo(id, cleanCode, cleanName, cleanCity);
+    }
+
+    private static String text(String value, String field, int maxLength, boolean required) {
+        String clean = value == null ? "" : value.strip();
+        if (clean.isEmpty()) {
+            if (required) {
+                throw ApiException.badRequest("'%s' is required.".formatted(field));
+            }
+            return null;
+        }
+        if (clean.length() > maxLength || clean.chars().anyMatch(Character::isISOControl)) {
+            throw ApiException.badRequest("'%s' must be at most %d characters of text.".formatted(field, maxLength));
+        }
+        return clean;
     }
 }

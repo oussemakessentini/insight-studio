@@ -1,6 +1,5 @@
 package com.oussamaksantini.insightstudio.importing;
 
-import com.oussamaksantini.insightstudio.common.ImportsProperties;
 import com.oussamaksantini.insightstudio.common.web.ApiException;
 import com.oussamaksantini.insightstudio.importing.dto.ImportDetailResponse;
 import com.oussamaksantini.insightstudio.importing.dto.ImportListResponse;
@@ -9,7 +8,6 @@ import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Positive;
 import java.io.IOException;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -21,13 +19,11 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 /**
- * CSV import of historical sales. These endpoints write data without authentication, so the
- * controller only exists when {@value ImportsProperties#ENABLED_PROPERTY}{@code =true} (the
- * {@code local} profile); otherwise every {@code /api/imports} request is a 404.
+ * CSV import of historical sales into the current business. Every endpoint, including the batch
+ * history, requires the ADMIN or OWNER role; viewers get a 403 and the public demo never reaches it.
  */
 @RestController
 @RequestMapping("/api/imports")
-@ConditionalOnProperty(name = ImportsProperties.ENABLED_PROPERTY, havingValue = "true")
 class ImportController {
 
     private final ImportService imports;

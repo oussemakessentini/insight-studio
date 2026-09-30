@@ -15,6 +15,7 @@ import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -170,5 +171,22 @@ class ProductQueries {
 
     private static String indent(String sql) {
         return sql.lines().map(line -> "    " + line).reduce("", (a, b) -> a + b + "\n");
+    }
+
+    /** Inserts a product into the business unless the SKU is taken there; empty on a conflict. */
+    Optional<Long> insertProduct(long businessId, String sku, String name, String category, BigDecimal listPrice) {
+        return jdbc.queryForList("""
+                INSERT INTO products (business_id, sku, name, category, list_price)
+                VALUES (:businessId, :sku, :name, :category, :listPrice)
+                ON CONFLICT (business_id, sku) DO NOTHING
+                RETURNING id
+                """,
+                new MapSqlParameterSource()
+                        .addValue("businessId", businessId)
+                        .addValue("sku", sku)
+                        .addValue("name", name)
+                        .addValue("category", category)
+                        .addValue("listPrice", listPrice),
+                Long.class).stream().findFirst();
     }
 }

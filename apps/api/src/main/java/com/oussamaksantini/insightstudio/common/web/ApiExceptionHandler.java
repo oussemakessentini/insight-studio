@@ -9,6 +9,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
+import org.springframework.validation.FieldError;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.WebRequest;
@@ -23,6 +25,13 @@ import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExcep
 public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(ApiExceptionHandler.class);
+
+    @ExceptionHandler(TooManyRequestsException.class)
+    ResponseEntity<ProblemDetail> handleTooManyRequests(TooManyRequestsException ex) {
+        return ResponseEntity.status(ex.getStatus())
+                .header(HttpHeaders.RETRY_AFTER, Long.toString(ex.getRetryAfterSeconds()))
+                .body(ProblemDetail.forStatusAndDetail(ex.getStatus(), ex.getMessage()));
+    }
 
     @ExceptionHandler(ApiException.class)
     ProblemDetail handleApiException(ApiException ex) {
@@ -51,6 +60,24 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
                         .map(error -> "'%s' %s".formatted(
                                 result.getMethodParameter().getParameterName(), error.getDefaultMessage())))
                 .toList();
+        return validationProblem(ex, errors, headers, request);
+    }
+
+    /** Invalid JSON request bodies ({@code @Valid @RequestBody}): one message per field. */
+    @Override
+    protected ResponseEntity<Object> handleMethodArgumentNotValid(
+            MethodArgumentNotValidException ex, HttpHeaders headers, HttpStatusCode status, WebRequest request) {
+        List<String> errors = ex.getBindingResult().getAllErrors().stream()
+                .map(error -> error instanceof FieldError field
+                        ? "'%s' %s".formatted(field.getField(), field.getDefaultMessage())
+                        : error.getDefaultMessage())
+                .sorted()
+                .toList();
+        return validationProblem(ex, errors, headers, request);
+    }
+
+    private ResponseEntity<Object> validationProblem(
+            Exception ex, List<String> errors, HttpHeaders headers, WebRequest request) {
         ProblemDetail body = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, String.join("; ", errors) + ".");
         body.setProperty("errors", errors);
         return handleExceptionInternal(ex, body, headers, HttpStatus.BAD_REQUEST, request);

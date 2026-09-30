@@ -1,6 +1,5 @@
 package com.oussamaksantini.insightstudio.importing;
 
-import com.oussamaksantini.insightstudio.common.ImportsProperties;
 import com.oussamaksantini.insightstudio.importing.ImportValidator.PlannedLine;
 import com.oussamaksantini.insightstudio.importing.ImportValidator.PlannedReceipt;
 import com.oussamaksantini.insightstudio.importing.ImportValidator.ReceiptKey;
@@ -20,7 +19,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
@@ -28,10 +26,9 @@ import org.springframework.stereotype.Repository;
 
 /**
  * Import lookups and writes, all scoped to one business. Writes use plain JDBC (the JPA entities
- * don't map {@code sales.import_batch_id}). Exists only when imports are enabled.
+ * don't map {@code sales.import_batch_id}).
  */
 @Repository
-@ConditionalOnProperty(name = ImportsProperties.ENABLED_PROPERTY, havingValue = "true")
 class ImportQueries {
 
     /** Rows per set-based insert statement. */
