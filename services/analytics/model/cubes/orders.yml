@@ -7,14 +7,16 @@ cubes:
     description: Receipts with at least one line item, with their totals at the prices charged.
     sql: >
       SELECT s.id,
+             st.business_id,
              s.store_id,
              s.receipt_number,
              s.sold_at,
              SUM(si.quantity)                 AS units,
              SUM(si.quantity * si.unit_price) AS revenue
       FROM sales s
+      JOIN stores st ON st.id = s.store_id
       JOIN sale_items si ON si.sale_id = s.id
-      GROUP BY s.id, s.store_id, s.receipt_number, s.sold_at
+      GROUP BY s.id, st.business_id, s.store_id, s.receipt_number, s.sold_at
 
     joins:
       - name: stores
@@ -27,6 +29,11 @@ cubes:
         type: number
         primary_key: true
         public: true
+
+      - name: business_id
+        description: Owning business. Every query is filtered on it (services/analytics/security.js).
+        sql: business_id
+        type: number
 
       - name: receipt_number
         sql: receipt_number
@@ -68,8 +75,10 @@ cubes:
         format: currency
 
     pre_aggregations:
-      # Daily totals per store. Additive measures only, so any coarser time
-      # bucket (week, month) and any subset of stores/businesses rolls up exactly.
+      # Daily totals per business and store. Additive measures only, so any coarser time
+      # bucket (week, month) and any subset of stores rolls up exactly. business_id is a
+      # dimension so the mandatory business filter (security.js) is served from this rollup,
+      # which all businesses share.
       #
       # Deliberately not partitioned. With partition_granularity, Cube v1.7.46
       #  - clips a partition built on demand to the requesting query's date range and
@@ -85,8 +94,8 @@ cubes:
           - orders.revenue
           - orders.units
         dimensions:
+          - orders.business_id
           - orders.store_id
-          - businesses.slug
         time_dimension: orders.sold_at
         granularity: day
         refresh_key:
