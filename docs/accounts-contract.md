@@ -178,3 +178,17 @@ Recorded at integration; the code and [auth.md](auth.md) are authoritative.
   logger; no email is sent yet.
 - **Cube:** production mode needs its own **Cube Store** service (`cubestore` in the `analytics`
   compose profile); Cube and Cube Store bind to `127.0.0.1` only.
+
+## 10. Production hardening (later phase)
+
+Superseding parts of §1, §5 and §9; details in [auth.md](auth.md) and [production.md](production.md):
+
+- Sessions and rate limits moved from memory to PostgreSQL (Flyway V5, V6); the session cookie is
+  `SESSION` (`__Host-SESSION` with the `prod` profile). Sign-up, reset requests, reset tokens and
+  invitations are rate limited too.
+- Reset links are emailed over SMTP and never logged; `RESET_LINK_BASE` is replaced by
+  `WEB_BASE_URL`.
+- `POST /api/businesses/{id}/members` (add an existing account) is replaced by email invitations
+  (Flyway V7), so inviting never reveals whether an account exists.
+- Forwarded headers are trusted only from `TRUSTED_PROXIES`; the `prod` profile requires Secure
+  cookies and an https `WEB_BASE_URL`.

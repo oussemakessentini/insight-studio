@@ -53,21 +53,40 @@ session.
 - Settings › Catalog (`/settings/catalog`): `canManageCatalog`.
 - Otherwise a "You don't have access" page (or "The demo is read-only" with a sign-in button).
 
-Members page controls follow the §4 matrix: OWNER adds any role, ADMIN adds VIEWER/ADMIN; only
-OWNER changes roles; OWNER removes others, ADMIN removes VIEWERs; your own row offers Leave. The last
+Members page controls follow the §4 matrix: OWNER invites any role, ADMIN invites VIEWER/ADMIN;
+pending invitations are listed with Revoke (ADMIN can't revoke an OWNER invitation); only OWNER
+changes roles; OWNER removes others, ADMIN removes VIEWERs; your own row offers Leave. The last
 owner can't be demoted or leave (the select and Leave are hidden). Leaving is also on `/account` for
 every membership.
 
+## Invitations
+
+Owners and admins invite by email from Settings › Members; the invitee gets a link to
+`/invite?token=…`. The invite page:
+
+- moves the token from the address bar into this tab's `sessionStorage` at once (it never stays in
+  history or bookmarks) and previews the invitation (`POST /api/invitations/preview`);
+- signed out: offers "Sign in to accept" and "Create an account", both returning to `/invite`
+  through `?next=` (sign-up with a pending invitation goes back to it instead of onboarding);
+- signed in with the invited address: "Join {business}" accepts, selects the joined business and
+  opens its dashboard;
+- signed in with another address: explains which address the invitation is for and offers to sign out;
+- used, revoked or expired links show one "invalid or has expired" message.
+
+`index.html` sets `<meta name="referrer" content="same-origin">`, so reset and invitation URLs are
+never sent to other sites.
+
 ## Routes
 
-`/sign-in`, `/sign-up`, `/forgot-password`, `/reset-password?token=…`, `/account`,
+`/sign-in`, `/sign-up`, `/forgot-password`, `/reset-password?token=…`, `/invite?token=…`, `/account`,
 `/businesses/new`, `/settings/members`, `/settings/catalog`, plus the existing pages. `?next=` is only
 followed for same-site paths (never `//host` or absolute URLs).
 
 ## Forms
 
 Labels, `autocomplete` (`email`, `current-password`, `new-password`, `name`, `organization`), inline
-validation (password 12–128 characters and not the email; confirmations must match), server errors
+validation (password at least 12 characters and at most 72 UTF-8 bytes, not the email;
+confirmations must match), server errors
 in an alert, busy/disabled states and success confirmations. Blurring an empty field doesn't flag it
 (errors for empty required fields appear on submit), so the layout doesn't shift under the pointer.
 Forgot-password always ends with the neutral "If an account exists for …, we sent a link"; only a
@@ -80,8 +99,8 @@ network error, rate limit or server error is shown instead.
 2. `POST /api/stores` returns `{id, code, name, city}` and `POST /api/products` returns
    `{id, sku, name, category, listPrice}` (used for "View store/product" links; missing ids just hide
    the link).
-3. `POST /api/businesses/{id}/members` returns the new member (`{userId, email, displayName, role,
-   since}`); `PATCH` returns the member or nothing.
+3. `POST /api/businesses/{id}/invitations` returns the invitation (`{id, email, role, invitedBy,
+   createdAt, expiresAt}`); `PATCH .../members/{userId}` returns the member or nothing.
 4. Leaving a business is `DELETE /api/businesses/{id}/members/{myUserId}` with `X-Business-Id: {id}`.
 5. A wrong current password on `POST /api/auth/password/change` is a `400` with a detail message (a
    `401` is shown as an error too, without redirecting).

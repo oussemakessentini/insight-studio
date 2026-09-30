@@ -6,20 +6,26 @@ the implementation in `apps/api` and how to use it locally.
 
 ## Sessions and CSRF
 
-- **Server-side sessions** (Spring Security). Signing in stores the user in the HTTP session; the
-  browser only holds the `JSESSIONID` cookie (`HttpOnly`, `SameSite=Lax`). Sessions live in memory:
-  a single API instance, and every session is lost when the API restarts. Idle timeout: 8 hours
-  (`server.servlet.session.timeout`).
+- **Server-side sessions** in PostgreSQL (Spring Session JDBC, tables `spring_session` and
+  `spring_session_attributes` from Flyway V5). Every API instance reads the same sessions, and they
+  survive restarts and deployments. The browser only holds the `SESSION` cookie (`HttpOnly`,
+  `SameSite=Lax`; `__Host-SESSION` with the `prod` profile). Idle timeout: 8 hours
+  (`server.servlet.session.timeout`); expired sessions are purged every minute.
+- **What a session stores**: only the signed-in user's id, email and session version, as plain
+  values (`SessionAccountContextRepository`), never a serialized Spring Security object, so a newer
+  build can always read sessions written by an older one. Anonymous visitors get no session at all
+  (the CSRF token is a cookie). Signing out deletes the session row, ending it on every instance.
 - **Session fixation**: every sign-in (and password change) gives the session a new id.
 - **CSRF**: the API sets a readable `XSRF-TOKEN` cookie; every `POST`/`PUT`/`PATCH`/`DELETE` must
   send the same value in the `X-XSRF-TOKEN` header, otherwise `403` (problem detail mentioning
   CSRF). Only the header is accepted (no `_csrf` form field). `GET /api/session` always sends the
   cookie; sign-in, sign-up, password change and sign-out issue a new one, so read the cookie again
   after those calls.
-- **Secure cookies**: off by default so plain `http://localhost` works. Set `COOKIE_SECURE=true`
-  (property `insight.security.cookie-secure`) wherever the app is served over HTTPS.
+- **Secure cookies**: off by default so plain `http://localhost` works. The `prod` profile turns
+  them on and refuses to start without them; see [production.md](production.md).
 - **Deny by default**: everything needs a session except `GET /api/session`,
-  `POST /api/auth/sign-up|sign-in|password/forgot|password/reset`, `GET /actuator/health`, and —
+  `POST /api/auth/sign-up|sign-in|password/forgot|password/reset`, `POST /api/invitations/preview`,
+  `GET /actuator/health`, and —
   only when the public demo is enabled — `GET` on the business read endpoints (`/api/dashboard/**`,
   `/api/products/**`, `/api/sales/**`, `/api/stores/**`, `/api/reports/**`, `/api/analytics/**`).
   Not signed in: `401 "Sign in to continue."`. Signed in without the role: `403`. Unknown `/api/**`
@@ -37,20 +43,13 @@ the implementation in `apps/api` and how to use it locally.
 - Emails are trimmed and compared case-insensitively (unique index on `lower(email)`).
 - Sign-in answers `401 "Invalid email or password."` for an unknown email and for a wrong
   password alike, and does the same bcrypt work in both cases.
-- Brute force: after 5 failed sign-ins for one email, or 20 from one client IP, within 15 minutes,
-  further attempts get `429` with `Retry-After` (seconds). Wrong current passwords on
-  `password/change` count too. The counters are in memory, per instance, and reset on restart. The
-  IP is the TCP peer address: behind a reverse proxy, configure Spring Boot's forwarded-header
-  support, or every user shares the proxy's address.
+- Rate limits: see [Rate limits](#rate-limits) (sign-in, sign-up, recovery and invitations).
 - **Forgot password**: `POST /api/auth/password/forgot {email}` always answers `202`. When the
   email has an account, a random 32-byte token (URL-safe base64) is generated, only its SHA-256 is
   stored in `password_reset_tokens`, it expires after 30 minutes, and requesting a new link
-  invalidates older ones. The link is `insight.accounts.reset-link-base` + `?token=...`
-  (default `http://localhost:5173/reset-password?token=...`, override with `RESET_LINK_BASE`).
-- **Delivery**: there is no mail server yet. The default `PasswordResetNotifier` logs the link at
-  INFO on the `insight.password-reset` logger — the link is a secret, so this is for local
-  development only. Provide another `PasswordResetNotifier` bean (e.g. a mail sender) before other
-  people use the API.
+  invalidates older ones. The link is `WEB_BASE_URL` + `/reset-password?token=...`
+  (property `insight.accounts.web-base-url`, default `http://localhost:5173`).
+- **Delivery**: the link is emailed over SMTP ([Email](#email)). It is never logged.
 - **Reset**: `POST /api/auth/password/reset {token, newPassword}` → `204`, or
   `400 "This reset link is invalid or has expired."`. A token works once; a password that fails the
   policy does not use it up. A reset signs out every session of the user.
@@ -86,7 +85,7 @@ server would refuse anyway.
 | CSV import, import history | ✓ | ✓ | 403 | 401 |
 | Create stores (`POST /api/stores`) and products (`POST /api/products`) | ✓ | ✓ | 403 | 401 |
 | List members | ✓ | ✓ | 403 | 401 |
-| Add a member (existing account, by email) | any role | VIEWER or ADMIN | 403 | 401 |
+| Invite someone by email; list and revoke open invitations | any role | VIEWER or ADMIN invitations | 403 | 401 |
 | Change a member's role | ✓ (not demoting the last owner) | 403 | 403 | 401 |
 | Remove a member | ✓ (not the last owner) | VIEWERs only | 403 | 401 |
 | Leave (remove yourself) | ✓ (not the last owner) | ✓ | ✓ | – |
@@ -97,6 +96,62 @@ lock the business row, so two concurrent requests cannot both remove "the other"
 
 Store codes and SKUs are 1–50 characters of letters, digits, `.`, `_`, `-` (they are matched
 exactly by CSV imports) and unique within a business (`409` otherwise).
+
+## Invitations
+
+People join a business only through invitations; there is no way to add an account directly (so
+nothing tells an inviter whether an address has an account).
+
+| Endpoint | Who | Does |
+|---|---|---|
+| `POST /api/businesses/{id}/invitations {email, role}` | OWNER (any role), ADMIN (VIEWER, ADMIN) | `201` with the invitation, whether or not the address has an account; emails the link. `409` if the address already belongs to a member |
+| `GET /api/businesses/{id}/invitations` | OWNER, ADMIN | Open invitations: `id, email, role, invitedBy, createdAt, expiresAt` |
+| `DELETE /api/businesses/{id}/invitations/{invitationId}` | OWNER, ADMIN (not OWNER invitations) | Revokes it: `204` |
+| `POST /api/invitations/preview {token}` | anyone with the link | `businessName, role, invitedBy, email, expiresAt` |
+| `POST /api/invitations/accept {token}` | signed in | Joins with the invited role: `200` with the business |
+
+- The link is `WEB_BASE_URL` + `/invite?token=...`: 32 random bytes, only the SHA-256 is stored
+  (`invitations`, Flyway V7). It works once and expires after 7 days. Inviting the same address
+  again replaces the open invitation.
+- Only a signed-in account **whose email is the invited address** can accept (`403` otherwise,
+  and the link stays usable). An existing member gets `409`.
+- The inviter must still be allowed to grant the role when the link is used; if they were removed
+  or demoted, the link stops working.
+- Unknown, used, revoked, expired and orphaned links all answer the same
+  `400 "This invitation is invalid or has expired."`.
+- Tokens travel in request bodies, never in API URLs. The web app moves the token out of the address
+  bar as soon as `/invite` opens and sends `Referrer-Policy: same-origin`.
+
+## Rate limits
+
+Stored in PostgreSQL (`rate_limit_hits`, Flyway V6), so they apply across every API instance and
+survive restarts. Each bucket is a limit name plus the SHA-256 of the email, IP or account; no
+address is stored in clear. Windows slide, use the database clock, and concurrent requests take a
+per-bucket advisory lock. A limit reached answers `429` with `Retry-After` (seconds).
+
+| Limit | Counts | Max per window |
+|---|---|---|
+| Sign-in per email / per IP | failed sign-ins and failed password changes | 5 / 20 per 15 min |
+| Sign-up per IP | every attempt, successful or not | 10 per hour |
+| Reset request per IP | every request | 10 per hour |
+| Reset email per address | emails sent (further requests still answer `202`, nothing is sent) | 3 per hour |
+| Reset token use per IP | every attempt | 20 per 15 min |
+| Invitations per account | invitations sent | 20 per hour |
+| Invitation preview/accept per IP | every attempt | 30 per 15 min |
+
+A successful sign-in or password reset clears the email's failed sign-ins. The client IP comes
+from the TCP connection unless it is a trusted proxy ([production.md](production.md#reverse-proxy)).
+
+## Email
+
+Password resets and invitations are sent as plain text over SMTP (Spring Boot `spring.mail`),
+asynchronously on a small bounded queue and only after the database transaction that stored their
+token commits, so response times reveal nothing and a slow mail server cannot slow the API down.
+Neither the email body nor the link is ever logged; a failed delivery logs only the kind of email
+and the SMTP error.
+
+In development the defaults (`localhost:1025`) reach Mailpit from `infra/compose.yaml`; open
+http://localhost:8025 to read the emails. Production settings: [production.md](production.md#email).
 
 ## Public demo
 
@@ -136,12 +191,18 @@ exactly by CSV imports) and unique within a business (`409` otherwise).
    (`POST /api/imports`, see [csv-import.md](csv-import.md)). With a single business no
    `X-Business-Id` header is needed.
 
-In the web app all of this happens through the sign-up and onboarding screens; forgotten-password
-links appear in the API log (logger `insight.password-reset`).
+In the web app all of this happens through the sign-up and onboarding screens. Reset and
+invitation emails land in Mailpit (http://localhost:8025).
 
-## Tables (Flyway `V4__create_accounts.sql`)
+## Tables
+
+Flyway `V4__create_accounts.sql`:
 
 - `users` (`email` unique case-insensitively, `password_hash`, `display_name`, `session_version`,
   `last_sign_in_at`)
 - `memberships` (`user_id`, `business_id`) primary key, `role` in `OWNER`/`ADMIN`/`VIEWER`
 - `password_reset_tokens` (`token_sha256` unique, `expires_at`, `used_at`)
+
+Later migrations: `V5` `spring_session`, `spring_session_attributes` (sessions); `V6`
+`rate_limit_hits`; `V7` `invitations` (`token_sha256` unique, `expires_at`, `accepted_at`,
+`revoked_at`; at most one open invitation per business and address).

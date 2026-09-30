@@ -6,7 +6,7 @@ products and recent sales, plus a searchable product catalogue with per-product 
 a sales register with receipt-level detail, per-store performance and monthly/category reports
 with CSV export. Date-range and store filters apply across every page.
 
-People sign up, create businesses and invite existing accounts as owners, admins or viewers.
+People sign up, create businesses and invite others by email as owners, admins or viewers.
 Every request sees only the business its signed-in user is a member of; owners and admins can set
 up stores and products and import historical sales from CSV. An optional, private Cube semantic
 layer serves the same figures behind the API, and a read-only public demo can be switched on.
@@ -42,6 +42,9 @@ Browser ──> Vite dev server (:5173) ──/api proxy──> Spring Boot API 
 | `import_batches` | CSV imports (V3): file name, content hash (unique per business), counts and total; imported sales point to their batch through `sales.import_batch_id` |
 | `users`, `business_memberships` | Accounts (V4): email, bcrypt hash, session version; one role (OWNER, ADMIN, VIEWER) per user and business |
 | `password_reset_tokens` | Recovery (V4): SHA-256 of a single-use token, 30-minute expiry |
+| `spring_session`, `spring_session_attributes` | Sessions (V5), shared by every API instance and kept across restarts |
+| `rate_limit_hits` | Rate limits (V6): hashed buckets for sign-in, sign-up, recovery and invitations |
+| `invitations` | Invitations (V7): SHA-256 of a single-use token, 7-day expiry, invited email and role |
 
 Revenue is always `SUM(quantity × sale_items.unit_price)`, so historical revenue is unaffected when
 a product's list price changes. Days, weeks and months are bucketed in the business's time zone.
@@ -91,7 +94,8 @@ a product's list price changes. Days, weeks and months are bucketed in the busin
 | `/sign-in`, `/sign-up`, `/forgot-password`, `/reset-password` | Accounts and recovery |
 | `/businesses/new` | Create a business (shown after sign-up when you have none); the sidebar switches between your businesses |
 | `/settings/catalog` | Add stores and products (owners and admins) |
-| `/settings/members` | Members and roles (owners and admins) |
+| `/settings/members` | Members, roles and invitations (owners and admins) |
+| `/invite` | Accept an invitation from its emailed link |
 | `/account` | Profile, password change and sign-out |
 
 Signed-out visitors see the read-only demo when it is enabled, otherwise the sign-in page. Viewers
@@ -125,7 +129,8 @@ docker compose up -d
 ```
 
 Later runs only need `cd infra` and `docker compose up -d`. The database listens on
-`127.0.0.1:5435`.
+`127.0.0.1:5435`; the same command starts Mailpit, which catches account emails (SMTP
+`127.0.0.1:1025`, inbox at http://localhost:8025).
 
 **2. API with demo data** (http://localhost:8080)
 
@@ -158,13 +163,20 @@ npm run dev
 Catalog, then import sales under Import. With the `demo` profile, signed-out visitors browse the
 demo business read-only; without it they are sent to sign in.
 
-Forgotten-password emails are not sent yet: the reset link is written to the API log at INFO
-(logger `insight.password-reset`). Account settings:
+To invite someone, open Members and send an invitation; they get an email with a link to join.
+Password-reset and invitation emails go to Mailpit, the local mail catcher started by
+`docker compose up -d`: read them at http://localhost:8025. Nothing leaves your machine, and links
+are never written to the API log. Account settings:
 
 | Environment variable | Default | Purpose |
 |---|---|---|
-| `COOKIE_SECURE` | `false` | Mark session and CSRF cookies `Secure`; set `true` wherever the app is served over HTTPS |
-| `RESET_LINK_BASE` | `http://localhost:5173/reset-password` | Web page that reset links point to |
+| `WEB_BASE_URL` | `http://localhost:5173` | Where the web app is served; email links point to its `/reset-password` and `/invite` pages |
+| `MAIL_HOST`, `MAIL_PORT` | `localhost`, `1025` (Mailpit) | SMTP server for account emails; also `MAIL_USERNAME`, `MAIL_PASSWORD`, `MAIL_SMTP_AUTH`, `MAIL_STARTTLS`, `MAIL_FROM` |
+| `COOKIE_SECURE` | `false` | Mark session and CSRF cookies `Secure` (forced on by the `prod` profile) |
+| `TRUSTED_PROXIES` | empty | Reverse proxies whose `X-Forwarded-For`/`-Proto` headers are believed (IPs or CIDR ranges) |
+
+For deployments (the `prod` profile, HTTPS, reverse proxies, SMTP) see
+[docs/production.md](docs/production.md).
 
 **CSV import** is available to owners and admins of their own business, never to the public demo.
 File format, rules and a sample file: [docs/csv-import.md](docs/csv-import.md) and
@@ -180,7 +192,7 @@ docker compose --profile analytics up -d
 
 and start the API with `INSIGHT_CUBE_URL=http://localhost:4000`. The browser never talks to Cube:
 the API signs a 60-second token carrying the member's business id, and Cube adds that business
-filter to every query. Plain `docker compose up -d` still starts only PostgreSQL. Model, security
+filter to every query. Plain `docker compose up -d` starts only PostgreSQL and Mailpit. Model, security
 and the reconciliation script: [docs/analytics.md](docs/analytics.md).
 
 ## Demo data
@@ -213,7 +225,7 @@ docker compose up -d
 
 ## API
 
-**Authentication.** Sessions use an HttpOnly `JSESSIONID` cookie. Every `POST`, `PATCH` and
+**Authentication.** Sessions are stored in PostgreSQL behind an HttpOnly `SESSION` cookie. Every `POST`, `PATCH` and
 `DELETE` needs the `X-XSRF-TOKEN` header copied from the `XSRF-TOKEN` cookie (issued by
 `GET /api/session`). Signed-in users with several businesses choose one with `X-Business-Id`; the
 server checks the membership and answers `404` for any business they don't belong to. Signed-out
@@ -223,10 +235,12 @@ curl walkthrough: [docs/auth.md](docs/auth.md).
 | Account endpoint | Does |
 |---|---|
 | `GET /api/session` | Current user, memberships and demo info; issues the CSRF cookie |
-| `POST /api/auth/sign-up`, `/sign-in`, `/sign-out` | Accounts and sessions (sign-in is rate limited) |
+| `POST /api/auth/sign-up`, `/sign-in`, `/sign-out` | Accounts and sessions (sign-up and sign-in are rate limited) |
 | `POST /api/auth/password/change`, `/password/forgot`, `/password/reset` | Password change and recovery (single-use tokens, 30 minutes) |
 | `GET`, `POST /api/businesses`; `PATCH /api/businesses/{id}` | Your businesses; create one (you become OWNER); rename (OWNER) |
-| `/api/businesses/{id}/members[/{userId}]` | List, add, change role, remove (owners and admins, with last-owner protection) |
+| `/api/businesses/{id}/members[/{userId}]` | List, change role, remove (owners and admins, with last-owner protection) |
+| `/api/businesses/{id}/invitations[/{invitationId}]` | Invite by email, list open invitations, revoke (owners and admins) |
+| `POST /api/invitations/preview`, `/accept` | Show an invitation from its token; accept it (signed in, invited address only) |
 | `POST /api/stores`, `POST /api/products` | Create stores and products (OWNER or ADMIN) |
 
 The reporting endpoints below are `GET` and read-only. Common query parameters:
@@ -354,6 +368,15 @@ running. They do not touch your local database. The tests cover:
   (plus `node --test` in `services/analytics` for the Cube-side filter)
 - validation and error responses
 - the demo seeder and the public demo switch
+- invitations: who may invite and revoke, identical answers for addresses with and without an
+  account, single use, expiry, revocation, the invited address only, an inviter who lost the role
+- sessions: shared by two API instances, surviving a restart, ended everywhere by sign-out or a
+  password change, and stored as plain values only
+- rate limits: sign-up, sign-in, recovery and invitations; shared across instances and restarts,
+  sliding windows, and no bypass by concurrent requests or spoofed `X-Forwarded-For`
+- trusted proxies, and the `prod` profile (Secure `__Host-` cookies; refuses unsafe settings)
+- email: reset and invitation links delivered over real SMTP to a Mailpit container, and never
+  written to the log
 
 ## Roadmap
 
@@ -362,14 +385,15 @@ running. They do not touch your local database. The tests cover:
 - Stores: per-store performance list and store detail pages
 - Reports: on-demand monthly and category reports with CSV export
 - Accounts, businesses and roles (owner, admin, viewer) with server-side authorization and
-  business isolation on every endpoint; password recovery
+  business isolation on every endpoint; password recovery by email
+- Email invitations; sessions and rate limits in PostgreSQL for several API instances; trusted
+  proxy handling and a `prod` profile that requires HTTPS settings
 - CSV import for owners and admins of their own business (never the public demo)
 - Private Cube analytics behind the API, scoped to the member's business
 
 **Later:**
 
-- Email delivery for password resets and invitations (links are only logged today)
-- Shared session and rate-limit storage (both are in memory, per API instance)
+- Email verification at sign-up, and account deletion
 - Business settings UI (rename, time zone)
 - Saved reports (named, reusable report definitions)
 - Dashboard panels served from Cube
