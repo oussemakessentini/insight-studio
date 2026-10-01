@@ -378,8 +378,11 @@ public class ReportPdf {
         for (String line : lines) {
             PdfPCell bullet = plain(new Phrase("•", f.small));
             bullet.setPaddingBottom(3);
+            bullet.setLeading(0, 1.35f);
             PdfPCell text = plain(new Phrase(line, f.small));
             text.setPaddingBottom(3);
+            // The default line height is too tight for a note that wraps onto a second line.
+            text.setLeading(0, 1.35f);
             table.addCell(bullet);
             table.addCell(text);
         }
