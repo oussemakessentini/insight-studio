@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.oussamaksantini.insightstudio.analytics.CubeAnswer;
+import com.oussamaksantini.insightstudio.analytics.CubeClient.CacheMode;
 import com.oussamaksantini.insightstudio.analytics.CubeException;
 import com.oussamaksantini.insightstudio.common.web.ServiceUnavailableException;
 import com.oussamaksantini.insightstudio.report.ReportEngine.CategoryBreakdown;
@@ -35,7 +36,11 @@ class CubeReportEngineTest {
             1, ZoneId.of("Europe/Paris"), LocalDate.parse("2026-03-20"), LocalDate.parse("2026-06-10"), 2L);
 
     /** One call the engine made. */
-    record Call(Map<String, Object> query, boolean mustRevalidate, Duration timeout) {
+    record Call(Map<String, Object> query, CacheMode cache, Duration timeout) {
+
+        boolean mustRevalidate() {
+            return cache == CacheMode.MUST_REVALIDATE;
+        }
     }
 
     private final List<Call> calls = new ArrayList<>();
@@ -44,9 +49,9 @@ class CubeReportEngineTest {
     /** An engine whose Cube answers each call with {@code answers} (call -> answer). */
     private CubeReportEngine engine(Duration timeout, Function<Call, CubeAnswer> answers) {
         return new CubeReportEngine(
-                (businessId, query, mustRevalidate, callTimeout) -> {
+                (businessId, query, cache, callTimeout) -> {
                     assertThat(businessId).isEqualTo(1);
-                    Call call = new Call(query, mustRevalidate, callTimeout);
+                    Call call = new Call(query, cache, callTimeout);
                     calls.add(call);
                     return answers.apply(call);
                 },
@@ -76,7 +81,7 @@ class CubeReportEngineTest {
                 new MonthTotals(LocalDate.parse("2026-05-01"), new BigDecimal("70.40"), 2, 5),
                 new MonthTotals(LocalDate.parse("2026-06-01"), new BigDecimal("60.30"), 1, 2));
         assertThat(calls).singleElement().satisfies(call -> {
-            assertThat(call.mustRevalidate()).isFalse();
+            assertThat(call.cache()).isEqualTo(CacheMode.DEFAULT);
             assertThat(call.query()).isEqualTo(CubeReportQueries.monthly(FILTER));
         });
     }
@@ -97,6 +102,8 @@ class CubeReportEngineTest {
         assertThat(months).isEmpty();
         assertThat(calls).hasSize(2);
         assertThat(calls.get(1).query()).isEqualTo(CubeReportQueries.monthlyVerified(FILTER));
+        // Not a rollup query: Cube must run it, not answer from its result cache.
+        assertThat(calls.get(1).cache()).isEqualTo(CacheMode.NO_CACHE);
     }
 
     @Test
@@ -271,16 +278,30 @@ class CubeReportEngineTest {
     }
 
     @Test
+    void aCallThatTimesOutBeforeTheDeadlineIsAskedAgain() {
+        int[] timeouts = {1};
+
+        List<MonthTotals> months = engine(Duration.ofSeconds(5), call -> {
+            if (timeouts[0]-- > 0) {
+                throw cubeException(true);
+            }
+            return answer("monthly-rollup");
+        }).monthly(FILTER);
+
+        assertThat(months).hasSize(3);
+        assertThat(calls).hasSize(2);
+    }
+
+    @Test
     void cubeFailuresAreA503ToRetryInAMinute() {
-        for (boolean timedOut : new boolean[] {false, true}) {
-            assertThatThrownBy(() -> engine(Duration.ofSeconds(5), call -> {
-                throw cubeException(timedOut);
-            }).categories(FILTER))
-                    .isInstanceOfSatisfying(ServiceUnavailableException.class, e -> {
-                        assertThat(e.getMessage()).isEqualTo(CubeReportEngine.UNAVAILABLE);
-                        assertThat(e.getRetryAfterSeconds()).isEqualTo(60);
-                    });
-        }
+        assertThatThrownBy(() -> engine(Duration.ofSeconds(5), call -> {
+            throw cubeException(false);
+        }).categories(FILTER))
+                .isInstanceOfSatisfying(ServiceUnavailableException.class, e -> {
+                    assertThat(e.getMessage()).isEqualTo(CubeReportEngine.UNAVAILABLE);
+                    assertThat(e.getRetryAfterSeconds()).isEqualTo(60);
+                });
+        assertThat(calls).hasSize(1);
     }
 
     @Test

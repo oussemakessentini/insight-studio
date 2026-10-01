@@ -81,22 +81,39 @@ public class CubeClient {
         }
     }
 
+    /** The {@code cache} mode of a {@code /load} call. */
+    public enum CacheMode {
+        /** Cube's default ({@code stale-if-slow}): may serve the newest existing rollup build and cached results. */
+        DEFAULT(null),
+        /**
+         * Cube re-reads the refresh keys (once their value is older than the key's {@code every}) and
+         * waits for, or starts, a rebuild of out-of-date rollups (1.7's replacement for the former
+         * {@code renewQuery: true}).
+         */
+        MUST_REVALIDATE("must-revalidate"),
+        /** Cube runs the query without its result cache (for queries that are not served by a rollup). */
+        NO_CACHE("no-cache");
+
+        private final String value;
+
+        CacheMode(String value) {
+            this.value = value;
+        }
+    }
+
     /**
      * One {@code /load} call for {@code businessId} (whose id goes into the token, so Cube adds its
      * mandatory business filter).
      *
-     * @param mustRevalidate send {@code "cache": "must-revalidate"}: Cube re-reads the refresh keys and
-     *     waits for (or starts) a rebuild of out-of-date rollups and cached results instead of serving
-     *     them (Cube 1.7's replacement for the former {@code renewQuery: true})
      * @param timeout the longest this call may wait for an answer (capped at the client's read timeout)
      * @throws CubeException when Cube is unreachable, times out, answers an HTTP error or an error
      *     other than "Continue wait", or sends no data rows
      */
-    public CubeAnswer send(long businessId, Map<String, Object> query, boolean mustRevalidate, Duration timeout) {
+    public CubeAnswer send(long businessId, Map<String, Object> query, CacheMode cache, Duration timeout) {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("query", query);
-        if (mustRevalidate) {
-            body.put("cache", "must-revalidate");
+        if (cache.value != null) {
+            body.put("cache", cache.value);
         }
         Duration callTimeout = timeout.compareTo(readTimeout) < 0 ? timeout : readTimeout;
         return post(callTimeout.equals(readTimeout) ? http : restClient(callTimeout), businessId, body);

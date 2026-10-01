@@ -13,6 +13,7 @@ import static com.oussamaksantini.insightstudio.report.CubeReportQueries.ORDERS_
 
 import com.oussamaksantini.insightstudio.analytics.CubeAnswer;
 import com.oussamaksantini.insightstudio.analytics.CubeClient;
+import com.oussamaksantini.insightstudio.analytics.CubeClient.CacheMode;
 import com.oussamaksantini.insightstudio.analytics.CubeException;
 import com.oussamaksantini.insightstudio.common.web.ServiceUnavailableException;
 import com.oussamaksantini.insightstudio.reporting.ReportFilter;
@@ -75,7 +76,7 @@ final class CubeReportEngine implements ReportEngine {
     /** One {@code /load} call (see {@link CubeClient#send}). */
     @FunctionalInterface
     interface Cube {
-        CubeAnswer send(long businessId, Map<String, Object> query, boolean mustRevalidate, Duration timeout);
+        CubeAnswer send(long businessId, Map<String, Object> query, CacheMode cache, Duration timeout);
     }
 
     private final Cube cube;
@@ -213,10 +214,12 @@ final class CubeReportEngine implements ReportEngine {
          * required throws {@link StaleAnswer}.
          */
         Verified verified(Map<String, Object> rollupQuery, Map<String, Object> verifiedQuery, String versionMember) {
-            List<Map<String, Object>> rows = load(rollupQuery);
+            List<Map<String, Object>> rows = load(rollupQuery, revalidate ? CacheMode.MUST_REVALIDATE : CacheMode.DEFAULT);
             OptionalLong version = version(rows, versionMember);
             if (version.isEmpty() && verifiedQuery != null) {
-                rows = load(verifiedQuery);
+                // Not served by a rollup: Cube's result cache is keyed by refresh-key values it may
+                // reuse even when revalidating, so this query always runs on the database.
+                rows = load(verifiedQuery, CacheMode.NO_CACHE);
                 version = version(rows, versionMember);
             }
             if (version.isEmpty()) {
@@ -241,7 +244,7 @@ final class CubeReportEngine implements ReportEngine {
             }
         }
 
-        private List<Map<String, Object>> load(Map<String, Object> query) {
+        private List<Map<String, Object>> load(Map<String, Object> query, CacheMode cache) {
             while (true) {
                 long remaining = deadline - System.nanoTime();
                 if (remaining <= 0) {
@@ -249,10 +252,12 @@ final class CubeReportEngine implements ReportEngine {
                 }
                 CubeAnswer answer;
                 try {
-                    answer = cube.send(businessId, query, revalidate, Duration.ofNanos(remaining));
+                    answer = cube.send(businessId, query, cache, Duration.ofNanos(remaining));
                 } catch (CubeException e) {
-                    if (e.timedOut() && System.nanoTime() >= deadline) {
-                        throw outOfTime();
+                    if (e.timedOut()) {
+                        // Cube is still working (its "Continue wait" did not come in time): ask again
+                        // until the deadline, like after "Continue wait".
+                        continue;
                     }
                     throw unavailable();
                 }
