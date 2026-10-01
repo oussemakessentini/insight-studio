@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.oussamaksantini.insightstudio.report.dto.CategoryReportResponse;
 import com.oussamaksantini.insightstudio.report.dto.MonthlyReportResponse;
 import com.oussamaksantini.insightstudio.reporting.DateRange;
+import com.oussamaksantini.insightstudio.testsupport.PdfText;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.nio.file.Files;
@@ -16,9 +17,6 @@ import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
-import org.apache.pdfbox.Loader;
-import org.apache.pdfbox.pdmodel.PDDocument;
-import org.apache.pdfbox.text.PDFTextStripper;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -36,26 +34,12 @@ class ReportPdfTest {
             "Q3 by month", "Fieldstone Apparel Co.", "EUR", ZoneId.of("Europe/Paris"), "Boston (BOS)",
             "Previous quarter (relative)");
 
-    static String text(byte[] bytes) throws IOException {
-        try (PDDocument document = Loader.loadPDF(bytes)) {
-            PDFTextStripper stripper = new PDFTextStripper();
-            stripper.setSortByPosition(true);
-            return stripper.getText(document);
-        }
+    private static String text(byte[] bytes) {
+        return PdfText.text(bytes);
     }
 
-    static List<String> pages(byte[] bytes) throws IOException {
-        try (PDDocument document = Loader.loadPDF(bytes)) {
-            List<String> pages = new ArrayList<>();
-            PDFTextStripper stripper = new PDFTextStripper();
-            stripper.setSortByPosition(true);
-            for (int page = 1; page <= document.getNumberOfPages(); page++) {
-                stripper.setStartPage(page);
-                stripper.setEndPage(page);
-                pages.add(stripper.getText(document));
-            }
-            return pages;
-        }
+    private static List<String> pages(byte[] bytes) {
+        return PdfText.pages(bytes);
     }
 
     private static void sample(String name, byte[] bytes) throws IOException {
