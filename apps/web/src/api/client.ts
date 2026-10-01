@@ -131,6 +131,10 @@ export function patchJson<T = void>(path: string, body: unknown, options: Reques
   return request<T>(path, 'PATCH', JSON.stringify(body), options)
 }
 
+export function putJson<T = void>(path: string, body: unknown, options: RequestOptions = {}): Promise<T> {
+  return request<T>(path, 'PUT', JSON.stringify(body), options)
+}
+
 export function deleteJson<T = void>(path: string, options: RequestOptions = {}): Promise<T> {
   return request<T>(path, 'DELETE', undefined, options)
 }
