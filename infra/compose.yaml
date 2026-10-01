@@ -54,7 +54,9 @@ services:
       CUBEJS_API_SECRET: ${CUBEJS_API_SECRET}
       CUBEJS_DEV_MODE: "false"
       NODE_ENV: production
-      # This single instance also refreshes the pre-aggregations.
+      # This single instance also refreshes the pre-aggregations. Keep it that way while the API
+      # uses it for reports (REPORTS_ENGINE=cube): the API asks it to rebuild rollups after data
+      # changes ("cache": "must-revalidate"), which an API-only Cube without a worker ignores.
       CUBEJS_REFRESH_WORKER: "true"
       CUBEJS_CUBESTORE_HOST: cubestore
       CUBEJS_SCHEDULED_REFRESH_TIMEZONES: ${CUBEJS_SCHEDULED_REFRESH_TIMEZONES:-America/New_York}
