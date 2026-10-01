@@ -1,5 +1,7 @@
 package com.oussamaksantini.insightstudio.savedreport;
 
+import java.time.ZoneId;
+
 import java.time.LocalDate;
 
 /**
@@ -29,8 +31,14 @@ public record SavedRange(LocalDate from, LocalDate to, RelativePreset preset) {
         return isRelative() ? RELATIVE : FIXED;
     }
 
-    /** "Previous quarter (relative)" or "Fixed dates", for exports. */
-    public String description() {
-        return isRelative() ? preset.label() + " (relative)" : "Fixed dates";
+    /**
+     * For exports: "Previous quarter (rolling: from today's date in America/New_York)", or "Fixed
+     * dates". A rolling range is recalculated from the current date in the business's time zone
+     * every time the report runs, and the description says so.
+     */
+    public String description(ZoneId businessZone) {
+        return isRelative()
+                ? "%s (rolling: from today's date in %s)".formatted(preset.label(), businessZone.getId())
+                : "Fixed dates";
     }
 }

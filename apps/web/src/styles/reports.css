@@ -401,7 +401,8 @@
   font-size: 14px;
 }
 
-.saved-details > span:not(:last-child)::after {
+/* Separators between the details, not before the full-width rolling-period note. */
+.saved-details > span:not(:last-child):not(:has(+ .saved-details-note))::after {
   content: '·';
   margin: 0 8px;
   color: var(--text-muted);
@@ -429,4 +430,11 @@
     flex-direction: column;
     align-items: stretch;
   }
+}
+
+/* "Rolling periods are recalculated from today's date in …" under a saved report's details. */
+.saved-details-note {
+  flex-basis: 100%;
+  color: var(--gray-500, #667085);
+  font-size: 13px;
 }

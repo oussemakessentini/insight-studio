@@ -9,7 +9,8 @@ import java.time.ZoneId;
  *
  * @param title the saved report's name, or "Monthly report" / "Category report"
  * @param storeLabel "All stores", or the store's name and code
- * @param rangeDescription "Previous quarter (relative)" or "Fixed dates" for a saved report;
+ * @param rangeDescription "Previous quarter (rolling: from today's date in <zone>)" or "Fixed dates"
+ *     for a saved report;
  *     {@code null} for an ad-hoc report
  */
 public record ReportPdfDetails(

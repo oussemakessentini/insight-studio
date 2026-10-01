@@ -103,7 +103,8 @@ Contents, in order:
 1. Header: "Insight Studio", the report title (saved report name, or "Monthly report" /
    "Category report"), the business name.
 2. Details block: period (`1 Jul 2026 – 30 Sep 2026`, day count), time zone, store ("All stores" or
-   name + code), range description for saved reports ("Previous quarter (relative)" / "Fixed dates"),
+   name + code), range description for saved reports ("Previous quarter (rolling: from today's date in
+   America/New_York)" / "Fixed dates"),
    currency.
 3. Summary metrics: revenue, orders, units, average order value (categories: also average unit price).
 4. The table, identical columns and values to the CSV: monthly (month, revenue, orders, units,

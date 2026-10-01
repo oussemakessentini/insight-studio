@@ -32,7 +32,7 @@ class ReportPdfTest {
 
     private static final ReportPdfDetails PARIS = new ReportPdfDetails(
             "Q3 by month", "Fieldstone Apparel Co.", "EUR", ZoneId.of("Europe/Paris"), "Boston (BOS)",
-            "Previous quarter (relative)");
+            "Previous quarter (rolling: from today's date in Europe/Paris)");
 
     private static String text(byte[] bytes) {
         return PdfText.text(bytes);
@@ -70,12 +70,13 @@ class ReportPdfTest {
         String text = text(bytes);
         assertThat(text)
                 .contains("Insight Studio", "Q3 by month", "Fieldstone Apparel Co.")
-                .contains("1 Jul 2026 – 14 Sep 2026 (76 days)", "Europe/Paris", "Boston (BOS)", "EUR",
-                        "Previous quarter (relative)")
+                .contains("1 Jul 2026 – 14 Sep 2026 (76 days)", "Europe/Paris", "Boston (BOS)", "EUR")
                 .contains("July 2026", "€12,450.50", "+12.3%", "−56.2%", "Partial", "14 of 30 days")
                 .contains("Total €32,550.75 802 1,791 €40.59")
                 .contains("Generated 1 Oct 2026, 11:05 (Europe/Paris)", "Page 1 of 1")
                 .doesNotContain(ReportPdf.NO_SALES);
+        // The range description may wrap onto a second line of the details block.
+        assertThat(text.replaceAll("\\s+", " ")).contains("Previous quarter (rolling: from today's date in Europe/Paris)");
         assertThat(new String(bytes, 0, 5)).isEqualTo("%PDF-");
     }
 

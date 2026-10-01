@@ -88,9 +88,9 @@ class RelativePresetTest {
                 "last_3_months", "last_12_months", "quarter_to_date", "previous_quarter", "year_to_date", "previous_year");
         assertThat(RelativePreset.fromCode("Last_7_days")).isEmpty();
         assertThat(RelativePreset.fromCode(null)).isEmpty();
-        assertThat(SavedRange.relative(RelativePreset.PREVIOUS_QUARTER).description())
-                .isEqualTo("Previous quarter (relative)");
-        assertThat(SavedRange.fixed(LocalDate.parse("2026-01-01"), LocalDate.parse("2026-01-31")).description())
+        assertThat(SavedRange.relative(RelativePreset.PREVIOUS_QUARTER).description(java.time.ZoneId.of("Pacific/Auckland")))
+                .isEqualTo("Previous quarter (rolling: from today's date in Pacific/Auckland)");
+        assertThat(SavedRange.fixed(LocalDate.parse("2026-01-01"), LocalDate.parse("2026-01-31")).description(java.time.ZoneId.of("Pacific/Auckland")))
                 .isEqualTo("Fixed dates");
     }
 }

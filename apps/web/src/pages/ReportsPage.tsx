@@ -99,6 +99,7 @@ export function ReportsPage({ context, filters, onFiltersChange, href }: PagePro
           kind={report}
           filters={filters}
           stores={stores}
+          timeZone={business.timeZone}
           needsVerification={saving.needsVerification}
           href={href}
         />

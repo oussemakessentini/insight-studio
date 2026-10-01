@@ -85,7 +85,7 @@ class SavedReportController {
                 definition.name(),
                 run.business(),
                 ReportPdfDetails.storeLabel(definition.storeName(), definition.storeCode()),
-                definition.range().description());
+                definition.range().description(run.business().zoneId()));
         byte[] body = run.monthly() != null
                 ? pdf.monthly(run.monthly(), details)
                 : pdf.categories(run.categories(), details);

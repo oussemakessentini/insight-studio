@@ -13,7 +13,7 @@ import { SavedReportForm } from '../components/reports/SavedReportForm'
 import { useApi } from '../hooks/useApi'
 import { formatDateRange } from '../lib/format'
 import { navigate } from '../lib/router'
-import { KIND_LABELS, rangeLabel, savedReportPermissions, storeLabel } from '../lib/savedReports'
+import { KIND_LABELS, rangeLabel, rollingExplanation, savedReportPermissions, storeLabel } from '../lib/savedReports'
 import { errorMessage } from '../lib/validation'
 import '../styles/accounts.css'
 import '../styles/reports.css'
@@ -121,6 +121,7 @@ export function SavedReportPage({ savedReportId, context, href }: PageProps & { 
             mode="edit"
             initial={savedReportInput(report)}
             stores={stores}
+            timeZone={business.timeZone}
             suggestedPreset="last_30_days"
             suggestedDates={report.period}
             submitLabel="Save changes"
@@ -148,6 +149,7 @@ function SavedReportDetails({ report, timeZone }: { report: SavedReport; timeZon
       <span className="nowrap">{formatDateRange(report.period.from, report.period.to)}</span>
       <span className="break-anywhere">{storeLabel(report)}</span>
       <span className="page-subtitle-muted">{timeZone}</span>
+      {report.range.type === 'relative' && <span className="saved-details-note">{rollingExplanation(timeZone)}</span>}
     </span>
   )
 }

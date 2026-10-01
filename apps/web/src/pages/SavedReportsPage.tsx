@@ -8,7 +8,7 @@ import { ResendVerification } from '../components/VerifyEmailBanner'
 import { useApi } from '../hooks/useApi'
 import { formatDateTime } from '../lib/format'
 import { signInHref } from '../lib/router'
-import { KIND_LABELS, rangeDescription, savedReportPermissions, storeLabel } from '../lib/savedReports'
+import { KIND_LABELS, rangeDescription, rollingExplanation, savedReportPermissions, storeLabel } from '../lib/savedReports'
 import { errorMessage } from '../lib/validation'
 import '../styles/accounts.css'
 import '../styles/reports.css'
@@ -58,8 +58,8 @@ export function SavedReportsPage({ context, href }: PageProps) {
         title="All saved reports"
         subtitle={
           can.canManage
-            ? 'Rolling periods move forward with today’s date every time a report runs.'
-            : 'Open a report to see today’s figures and export them as CSV or PDF.'
+            ? rollingExplanation(context.business.timeZone)
+            : `Open a report to see its figures and export them as CSV or PDF. ${rollingExplanation(context.business.timeZone)}`
         }
       >
         <div className="form-stack">

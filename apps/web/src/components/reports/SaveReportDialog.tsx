@@ -3,7 +3,7 @@ import type { ReportKind } from '../../api/reports'
 import { savedReportsApi, type RelativePreset, type SavedReport } from '../../api/savedReports'
 import type { StoreOption } from '../../api/types'
 import type { Filters, RangePreset } from '../../lib/filters'
-import { KIND_LABELS, rangeDescription } from '../../lib/savedReports'
+import { KIND_LABELS, rangeDescription, rollingExplanation } from '../../lib/savedReports'
 import { Dialog } from '../Dialog'
 import { FormSuccess } from '../Form'
 import { Link } from '../Link'
@@ -23,6 +23,8 @@ interface SaveReportDialogProps {
   kind: ReportKind
   filters: Filters
   stores: StoreOption[]
+  /** The business time zone, in which rolling periods are worked out. */
+  timeZone: string
   /** An OWNER or ADMIN whose email address isn't verified yet: explain instead of offering the form. */
   needsVerification: boolean
   /** Builds an in-app link that carries the current filters. */
@@ -30,7 +32,16 @@ interface SaveReportDialogProps {
 }
 
 /** "Save report" on the Reports page: names the report on screen and chooses how its dates move. */
-export function SaveReportDialog({ open, onClose, kind, filters, stores, needsVerification, href }: SaveReportDialogProps) {
+export function SaveReportDialog({
+  open,
+  onClose,
+  kind,
+  filters,
+  stores,
+  timeZone,
+  needsVerification,
+  href,
+}: SaveReportDialogProps) {
   const [saved, setSaved] = useState<SavedReport | null>(null)
   const close = () => {
     setSaved(null)
@@ -60,7 +71,7 @@ export function SaveReportDialog({ open, onClose, kind, filters, stores, needsVe
           </FormSuccess>
           <p className="dialog-text">
             Anyone in this business can open it from Saved reports and export it as CSV or PDF.
-            {saved.range.type === 'relative' && ' Its dates move forward each time it runs.'}
+            {saved.range.type === 'relative' && ` ${rollingExplanation(timeZone)}`}
           </p>
           <div className="form-actions dialog-actions">
             <Link className="button button-secondary" href={href('/reports/saved')} onClick={close}>
@@ -81,6 +92,7 @@ export function SaveReportDialog({ open, onClose, kind, filters, stores, needsVe
             range: { type: 'fixed', from: filters.from, to: filters.to },
           }}
           stores={stores}
+          timeZone={timeZone}
           suggestedPreset={SUGGESTED_PRESET[filters.preset] ?? 'last_30_days'}
           submitLabel={`Save ${KIND_LABELS[kind].toLowerCase()}`}
           busyLabel="Saving…"

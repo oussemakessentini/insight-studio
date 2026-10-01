@@ -8,10 +8,15 @@ export const KIND_LABELS: Record<ReportKind, string> = {
   categories: 'Category report',
 }
 
-/** "Previous quarter", or "Fixed dates" for a range that never moves. */
+/** "Previous quarter (rolling)", or "Fixed dates" for a range that never moves. */
 export function rangeLabel(range: SavedReportRangeResponse): string {
   if (range.type === 'fixed') return 'Fixed dates'
-  return range.preset ? (PRESET_LABELS[range.preset] ?? range.preset) : 'Relative dates'
+  return `${range.preset ? (PRESET_LABELS[range.preset] ?? range.preset) : 'Relative dates'} (rolling)`
+}
+
+/** How a rolling period is worked out; the API resolves it the same way (contract §2). */
+export function rollingExplanation(timeZone: string): string {
+  return `Rolling periods are recalculated from today’s date in ${timeZone} every time the report runs.`
 }
 
 /** "Last 30 days · Sep 2 – Oct 1, 2026": how the range is defined, and the dates it covers today. */

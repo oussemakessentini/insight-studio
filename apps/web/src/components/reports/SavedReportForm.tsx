@@ -23,6 +23,8 @@ interface SavedReportFormProps {
    */
   mode: 'create' | 'edit'
   stores: StoreOption[]
+  /** The business time zone: rolling periods are worked out from today's date there. */
+  timeZone: string
   /** The preset preselected when switching to a rolling period. */
   suggestedPreset: RelativePreset
   /** The dates prefilled when switching a rolling period to fixed dates (e.g. its current period). */
@@ -40,6 +42,7 @@ export function SavedReportForm({
   initial,
   mode,
   stores,
+  timeZone,
   suggestedPreset,
   suggestedDates,
   submitLabel,
@@ -211,7 +214,7 @@ export function SavedReportForm({
           />
           <span>
             <span className="choice-label">A rolling period</span>
-            <span className="choice-hint">Moves with today’s date in the business time zone</span>
+            <span className="choice-hint">Recalculated from today’s date in {timeZone} every time it runs</span>
           </span>
         </label>
         {!fixed && (

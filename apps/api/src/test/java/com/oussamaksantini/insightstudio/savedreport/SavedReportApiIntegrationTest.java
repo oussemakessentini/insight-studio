@@ -676,7 +676,7 @@ class SavedReportApiIntegrationTest extends PostgresIntegrationTest {
             assertThat((Map<?, ?>) JsonPath.read(run, "$.monthly")).isEqualTo(JsonPath.read(adhoc, "$"));
             byte[] pdf = owner.perform(get("/api/saved-reports/" + id + "/report.pdf")).andReturn().getResponse()
                     .getContentAsByteArray();
-            assertThat(PdfText.text(pdf)).contains("Last 365 days (relative)", "(365 days)");
+            assertThat(PdfText.text(pdf).replaceAll("\\s+", " ")).contains("Last 365 days (rolling: from today's date in", "(365 days)");
         }
 
         @Test
@@ -761,8 +761,8 @@ class SavedReportApiIntegrationTest extends PostgresIntegrationTest {
                 if (kind.equals("monthly")) {
                     writeSample("saved-monthly-empty.pdf", pdf);
                 }
-                assertThat(PdfText.text(pdf)).contains("No sales in this period", "Empty Shop", "$0.00", "Page 1 of 1",
-                        "Previous month (relative)", "America/New_York");
+                assertThat(PdfText.text(pdf).replaceAll("\\s+", " ")).contains("No sales in this period", "Empty Shop", "$0.00", "Page 1 of 1",
+                        "Previous month (rolling: from today's date in America/New_York)", "America/New_York");
             }
         }
     }
