@@ -4,12 +4,12 @@ import com.oussamaksantini.insightstudio.report.dto.CategoryReportResponse;
 import com.oussamaksantini.insightstudio.report.dto.MonthlyReportResponse;
 
 /** CSV renderings of the reports: a header row followed by the same rows as the JSON (no totals row). */
-final class ReportCsv {
+public final class ReportCsv {
 
     private ReportCsv() {
     }
 
-    static String monthly(MonthlyReportResponse report) {
+    public static String monthly(MonthlyReportResponse report) {
         CsvWriter csv = new CsvWriter().header(
                 "month", "revenue", "orders", "units_sold", "average_order_value",
                 "revenue_change_percent", "days_covered", "days_in_month", "complete");
@@ -28,7 +28,7 @@ final class ReportCsv {
         return csv.toString();
     }
 
-    static String categories(CategoryReportResponse report) {
+    public static String categories(CategoryReportResponse report) {
         CsvWriter csv = new CsvWriter().header(
                 "category", "revenue", "units_sold", "orders", "revenue_share_percent", "average_unit_price");
         for (CategoryReportResponse.Row r : report.rows()) {
