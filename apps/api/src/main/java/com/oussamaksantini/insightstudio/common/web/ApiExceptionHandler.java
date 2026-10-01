@@ -33,6 +33,13 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
                 .body(ProblemDetail.forStatusAndDetail(ex.getStatus(), ex.getMessage()));
     }
 
+    @ExceptionHandler(ServiceUnavailableException.class)
+    ResponseEntity<ProblemDetail> handleServiceUnavailable(ServiceUnavailableException ex) {
+        return ResponseEntity.status(ex.getStatus())
+                .header(HttpHeaders.RETRY_AFTER, Long.toString(ex.getRetryAfterSeconds()))
+                .body(ProblemDetail.forStatusAndDetail(ex.getStatus(), ex.getMessage()));
+    }
+
     @ExceptionHandler(ApiException.class)
     ProblemDetail handleApiException(ApiException ex) {
         return ProblemDetail.forStatusAndDetail(ex.getStatus(), ex.getMessage());

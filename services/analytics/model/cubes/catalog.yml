@@ -7,7 +7,7 @@ cubes:
     # Query-cache key: changes with any report data (report_data_version, Flyway V11).
     refresh_key:
       sql: SELECT version, (SELECT MAX(id) FROM businesses) AS last_business FROM report_data_version WHERE id = 1
-      every: 5 second
+      every: 1 second
 
     dimensions:
       - name: id
@@ -45,7 +45,7 @@ cubes:
     # Query-cache key: changes with any report data (report_data_version, Flyway V11).
     refresh_key:
       sql: SELECT version, (SELECT MAX(id) FROM businesses) AS last_business FROM report_data_version WHERE id = 1
-      every: 5 second
+      every: 1 second
 
     joins:
       - name: businesses
@@ -86,7 +86,7 @@ cubes:
     # Query-cache key: changes with any report data (report_data_version, Flyway V11).
     refresh_key:
       sql: SELECT version, (SELECT MAX(id) FROM businesses) AS last_business FROM report_data_version WHERE id = 1
-      every: 5 second
+      every: 1 second
 
     joins:
       - name: businesses

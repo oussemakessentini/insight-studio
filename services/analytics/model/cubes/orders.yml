@@ -33,7 +33,7 @@ cubes:
     # Query-cache key for queries not served by a rollup: changes with any report data.
     refresh_key:
       sql: SELECT version, (SELECT MAX(id) FROM businesses) AS last_business FROM report_data_version WHERE id = 1
-      every: 5 second
+      every: 1 second
 
     joins:
       - name: stores
@@ -106,7 +106,7 @@ cubes:
       # up exactly. business_id is a dimension so the mandatory business filter (security.js)
       # is served from this rollup, which all businesses share.
       #
-      # Rebuilt whenever report_data_version changes (checked every 5 seconds, and on every
+      # Rebuilt whenever report_data_version changes (checked every second, and on every
       # request the API sends with cache "must-revalidate").
       #
       # Deliberately not partitioned. With partition_granularity, Cube v1.7.46
@@ -130,4 +130,4 @@ cubes:
         granularity: day
         refresh_key:
           sql: SELECT version, (SELECT MAX(id) FROM businesses) AS last_business FROM report_data_version WHERE id = 1
-          every: 5 second
+          every: 1 second

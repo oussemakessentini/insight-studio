@@ -21,7 +21,7 @@ cubes:
     # Query-cache key for queries not served by a rollup: changes with any report data.
     refresh_key:
       sql: SELECT version, (SELECT MAX(id) FROM businesses) AS last_business FROM report_data_version WHERE id = 1
-      every: 5 second
+      every: 1 second
 
     joins:
       - name: products
@@ -107,4 +107,4 @@ cubes:
         granularity: day
         refresh_key:
           sql: SELECT version, (SELECT MAX(id) FROM businesses) AS last_business FROM report_data_version WHERE id = 1
-          every: 5 second
+          every: 1 second

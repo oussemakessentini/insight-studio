@@ -1,0 +1,142 @@
+{
+  "query": {
+    "measures": [
+      "order_categories.revenue",
+      "order_categories.units",
+      "order_categories.count",
+      "order_categories.data_version"
+    ],
+    "dimensions": [
+      "order_categories.category"
+    ],
+    "timeDimensions": [],
+    "limit": 10000,
+    "timezone": "Europe/Paris",
+    "filters": [
+      {
+        "member": "order_categories.business_id",
+        "operator": "equals",
+        "values": [
+          "1"
+        ]
+      },
+      {
+        "or": [
+          {
+            "member": "order_categories.sold_at",
+            "operator": "inDateRange",
+            "values": [
+              "2025-01-01",
+              "2025-02-28"
+            ]
+          },
+          {
+            "member": "order_categories.sold_at",
+            "operator": "notSet"
+          }
+        ]
+      },
+      {
+        "member": "order_categories.business_id",
+        "operator": "equals",
+        "values": [
+          "1"
+        ]
+      }
+    ],
+    "rowLimit": 10000
+  },
+  "lastRefreshTime": "2026-10-01T14:55:48.004Z",
+  "annotation": {
+    "timeDimensions": {},
+    "measures": {
+      "order_categories.revenue": {
+        "title": "Order categories Revenue",
+        "shortTitle": "Revenue",
+        "description": "SUM(quantity * unit_price) of the category's products in the order.",
+        "type": "number",
+        "format": "currency",
+        "drillMembers": [],
+        "drillMembersGrouped": {
+          "measures": [],
+          "dimensions": []
+        }
+      },
+      "order_categories.units": {
+        "title": "Order categories Units sold",
+        "shortTitle": "Units sold",
+        "type": "number",
+        "drillMembers": [],
+        "drillMembersGrouped": {
+          "measures": [],
+          "dimensions": []
+        }
+      },
+      "order_categories.count": {
+        "title": "Order categories Orders",
+        "shortTitle": "Orders",
+        "description": "Orders containing at least one product of the category (marker rows are not counted).",
+        "type": "number",
+        "drillMembers": [],
+        "drillMembersGrouped": {
+          "measures": [],
+          "dimensions": []
+        }
+      },
+      "order_categories.data_version": {
+        "title": "Order categories Data version",
+        "shortTitle": "Data version",
+        "description": "report_data_version the rows were read at (docs/cube-reports.md).",
+        "type": "number",
+        "drillMembers": [],
+        "drillMembersGrouped": {
+          "measures": [],
+          "dimensions": []
+        }
+      }
+    },
+    "dimensions": {
+      "order_categories.category": {
+        "title": "Order categories Category",
+        "shortTitle": "Category",
+        "type": "string"
+      }
+    },
+    "segments": {}
+  },
+  "dataSource": "default",
+  "dbType": "postgres",
+  "extDbType": "cubestore",
+  "external": false,
+  "slowQuery": false,
+  "data": [
+    {
+      "order_categories.category": "Outerwear",
+      "order_categories.revenue": null,
+      "order_categories.units": null,
+      "order_categories.count": "0",
+      "order_categories.data_version": "7"
+    },
+    {
+      "order_categories.category": "Tops",
+      "order_categories.revenue": null,
+      "order_categories.units": null,
+      "order_categories.count": "0",
+      "order_categories.data_version": "7"
+    },
+    {
+      "order_categories.category": "Zzz",
+      "order_categories.revenue": null,
+      "order_categories.units": null,
+      "order_categories.count": "0",
+      "order_categories.data_version": "7"
+    },
+    {
+      "order_categories.category": null,
+      "order_categories.revenue": null,
+      "order_categories.units": null,
+      "order_categories.count": "0",
+      "order_categories.data_version": "7"
+    }
+  ]
+}
