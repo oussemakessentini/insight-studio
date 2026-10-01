@@ -104,6 +104,7 @@ class ReportApiIntegrationTest extends PostgresIntegrationTest {
         void zeroFillsMonthsFlagsPartialMonthsAndComparesWithThePreviousRow() throws Exception {
             mvc.perform(get("/api/reports/monthly?" + WINDOW))
                     .andExpect(status().isOk())
+                    .andExpect(header().string("X-Report-Engine", "sql"))
                     .andExpect(jsonPath("$.period.from").value("2026-03-20"))
                     .andExpect(jsonPath("$.period.to").value("2026-06-10"))
                     .andExpect(jsonPath("$.storeId", nullValue()))
@@ -264,6 +265,7 @@ class ReportApiIntegrationTest extends PostgresIntegrationTest {
                     "");
             mvc.perform(get("/api/reports/monthly.csv?" + WINDOW))
                     .andExpect(status().isOk())
+                    .andExpect(header().string("X-Report-Engine", "sql"))
                     .andExpect(header().string("Content-Type", "text/csv;charset=UTF-8"))
                     .andExpect(header().string("Content-Disposition",
                             "attachment; filename=\"monthly-2026-03-20-to-2026-06-10.csv\""))
@@ -299,6 +301,7 @@ class ReportApiIntegrationTest extends PostgresIntegrationTest {
         void csvErrorsAreProblemDetails() throws Exception {
             mvc.perform(get("/api/reports/categories.csv?from=2026-06-05&to=2026-06-01"))
                     .andExpect(status().isBadRequest())
+                    .andExpect(header().string("X-Report-Engine", "sql"))
                     .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
                     .andExpect(jsonPath("$.detail").value("'from' (2026-06-05) must be on or before 'to' (2026-06-01)."));
         }

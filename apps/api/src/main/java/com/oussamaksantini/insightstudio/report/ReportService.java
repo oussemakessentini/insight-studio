@@ -1,8 +1,8 @@
 package com.oussamaksantini.insightstudio.report;
 
-import com.oussamaksantini.insightstudio.report.ReportQueries.CategoryBreakdown;
-import com.oussamaksantini.insightstudio.report.ReportQueries.CategoryTotals;
-import com.oussamaksantini.insightstudio.report.ReportQueries.MonthTotals;
+import com.oussamaksantini.insightstudio.report.ReportEngine.CategoryBreakdown;
+import com.oussamaksantini.insightstudio.report.ReportEngine.CategoryTotals;
+import com.oussamaksantini.insightstudio.report.ReportEngine.MonthTotals;
 import com.oussamaksantini.insightstudio.report.dto.CategoryReportResponse;
 import com.oussamaksantini.insightstudio.report.dto.MonthlyReportResponse;
 import com.oussamaksantini.insightstudio.reporting.Granularity;
@@ -19,21 +19,26 @@ import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+/**
+ * The monthly and category reports. The raw per-period totals come from the configured
+ * {@link ReportEngine} (SQL or Cube); every calculation on them happens here, so responses, CSV and
+ * PDF files are identical for both engines (docs/cube-reports-contract.md §3).
+ */
 @Service
 @Transactional(readOnly = true)
 public class ReportService {
 
     private final ReportingContext reporting;
-    private final ReportQueries queries;
+    private final ReportEngine engine;
 
-    ReportService(ReportingContext reporting, ReportQueries queries) {
+    ReportService(ReportingContext reporting, ReportEngine engine) {
         this.reporting = reporting;
-        this.queries = queries;
+        this.engine = engine;
     }
 
     public MonthlyReportResponse monthly(LocalDate from, LocalDate to, Long storeId) {
         ReportFilter filter = reporting.resolveFilter(from, to, storeId);
-        Map<LocalDate, MonthTotals> byMonth = queries.monthly(filter).stream()
+        Map<LocalDate, MonthTotals> byMonth = engine.monthly(filter).stream()
                 .collect(Collectors.toMap(MonthTotals::month, Function.identity()));
 
         List<MonthlyReportResponse.Row> rows = new ArrayList<>();
@@ -70,7 +75,7 @@ public class ReportService {
 
     public CategoryReportResponse categories(LocalDate from, LocalDate to, Long storeId) {
         ReportFilter filter = reporting.resolveFilter(from, to, storeId);
-        CategoryBreakdown breakdown = queries.categories(filter);
+        CategoryBreakdown breakdown = engine.categories(filter);
         CategoryTotals total = breakdown.total();
         BigDecimal totalRevenue = ReportCalculations.money(total.revenue());
 

@@ -10,34 +10,30 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
-import org.springframework.stereotype.Repository;
 
 /**
- * Aggregate queries behind the reports. Each method runs a single SQL statement; revenue is
+ * The SQL report engine ({@code insight.reports.engine=sql}, the default): aggregate queries on
+ * PostgreSQL. Each method runs a single SQL statement; revenue is
  * {@code sale_items.quantity * sale_items.unit_price} and an order is a receipt with at least one
  * line item (enforced by the inner join in {@link com.oussamaksantini.insightstudio.reporting.ReportSql#SALES_FROM}).
  */
-@Repository
-class ReportQueries {
+class SqlReportEngine implements ReportEngine {
+
+    static final String NAME = "sql";
 
     private final NamedParameterJdbcTemplate jdbc;
 
-    ReportQueries(NamedParameterJdbcTemplate jdbc) {
+    SqlReportEngine(NamedParameterJdbcTemplate jdbc) {
         this.jdbc = jdbc;
     }
 
-    record MonthTotals(LocalDate month, BigDecimal revenue, long orders, long units) {
+    @Override
+    public String name() {
+        return NAME;
     }
 
-    record CategoryTotals(String category, BigDecimal revenue, long units, long orders) {
-    }
-
-    /** Category rows plus the grand total, whose orders are distinct across categories. */
-    record CategoryBreakdown(List<CategoryTotals> categories, CategoryTotals total) {
-    }
-
-    /** Months with at least one order, bucketed in the business's time zone, in order. */
-    List<MonthTotals> monthly(ReportFilter filter) {
+    @Override
+    public List<MonthTotals> monthly(ReportFilter filter) {
         String sql = """
                 SELECT CAST(date_trunc('month', s.sold_at AT TIME ZONE :tz) AS date) AS month,
                        SUM(si.quantity * si.unit_price)                             AS revenue,
@@ -59,7 +55,8 @@ class ReportQueries {
      * and, through {@code GROUPING SETS}, the overall total in the same statement. Sorted by revenue
      * (highest first), then name.
      */
-    CategoryBreakdown categories(ReportFilter filter) {
+    @Override
+    public CategoryBreakdown categories(ReportFilter filter) {
         String sql = """
                 WITH lines AS (
                     SELECT si.product_id, si.sale_id, si.quantity, si.unit_price
