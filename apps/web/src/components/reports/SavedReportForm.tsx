@@ -7,7 +7,7 @@ import {
   type RelativePreset,
   type SavedReportInput,
 } from '../../api/savedReports'
-import type { StoreOption } from '../../api/types'
+import type { DateRange, StoreOption } from '../../api/types'
 import { useTouched } from '../../hooks/useTouched'
 import { daysBetweenInclusive, formatDateRange } from '../../lib/format'
 import { KIND_LABELS } from '../../lib/savedReports'
@@ -25,6 +25,8 @@ interface SavedReportFormProps {
   stores: StoreOption[]
   /** The preset preselected when switching to a rolling period. */
   suggestedPreset: RelativePreset
+  /** The dates prefilled when switching a rolling period to fixed dates (e.g. its current period). */
+  suggestedDates?: DateRange
   submitLabel: string
   busyLabel: string
   /** Rejects with the error to show (e.g. a duplicate name, 409). */
@@ -39,6 +41,7 @@ export function SavedReportForm({
   mode,
   stores,
   suggestedPreset,
+  suggestedDates,
   submitLabel,
   busyLabel,
   onSubmit,
@@ -48,8 +51,8 @@ export function SavedReportForm({
   const [kind, setKind] = useState<ReportKind>(initial.kind)
   const [storeId, setStoreId] = useState(initial.storeId)
   const [rangeType, setRangeType] = useState(initial.range.type)
-  const [from, setFrom] = useState(initial.range.type === 'fixed' ? initial.range.from : '')
-  const [to, setTo] = useState(initial.range.type === 'fixed' ? initial.range.to : '')
+  const [from, setFrom] = useState(initial.range.type === 'fixed' ? initial.range.from : (suggestedDates?.from ?? ''))
+  const [to, setTo] = useState(initial.range.type === 'fixed' ? initial.range.to : (suggestedDates?.to ?? ''))
   const [preset, setPreset] = useState<RelativePreset>(
     initial.range.type === 'relative' ? initial.range.preset : suggestedPreset,
   )
