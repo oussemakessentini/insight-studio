@@ -13,6 +13,7 @@ import { useApi } from './hooks/useApi'
 import { useSessionLoader } from './hooks/useSessionLoader'
 import { useStateResetOn } from './hooks/useStateResetOn'
 import { filterQuery, filtersFromUrl, withFilters, type Filters } from './lib/filters'
+import { savedReportPermissions } from './lib/savedReports'
 import {
   currentLocation,
   isAuthRoute,
@@ -50,6 +51,8 @@ import { NewBusinessPage } from './pages/NewBusinessPage'
 import { ProductDetailPage } from './pages/ProductDetailPage'
 import { ProductsPage } from './pages/ProductsPage'
 import { ReportsPage } from './pages/ReportsPage'
+import { SavedReportPage } from './pages/SavedReportPage'
+import { SavedReportsPage, SavedReportsSignIn } from './pages/SavedReportsPage'
 import { SaleDetailPage } from './pages/SaleDetailPage'
 import { SalesPage } from './pages/SalesPage'
 import { StoreDetailPage } from './pages/StoreDetailPage'
@@ -213,6 +216,8 @@ function Workspace({
   const pageProps: PageProps = { context, filters, onFiltersChange: setFilters, href, refreshContext }
   const { access } = context
   const noAccess = <NoAccess access={access} businessName={context.business.name} homeHref={href('/')} />
+  // Saved reports belong to members; the public demo gets a sign-in prompt instead.
+  const savedReportsAvailable = savedReportPermissions(access).available
 
   return (
     <Shell
@@ -231,6 +236,13 @@ function Workspace({
       {route.name === 'stores' && <StoresPage {...pageProps} />}
       {route.name === 'store' && <StoreDetailPage key={route.storeId} storeId={route.storeId} {...pageProps} />}
       {route.name === 'reports' && <ReportsPage {...pageProps} />}
+      {route.name === 'savedReports' && (savedReportsAvailable ? <SavedReportsPage {...pageProps} /> : <SavedReportsSignIn />)}
+      {route.name === 'savedReport' &&
+        (savedReportsAvailable ? (
+          <SavedReportPage key={route.savedReportId} savedReportId={route.savedReportId} {...pageProps} />
+        ) : (
+          <SavedReportsSignIn />
+        ))}
       {/* Role-gated pages: hidden as a convenience; the API refuses these actions regardless. */}
       {route.name === 'imports' && (access.canImport ? <ImportsPage {...pageProps} /> : noAccess)}
       {route.name === 'import' &&
@@ -265,6 +277,8 @@ function sectionOf(route: Route): Section | null {
     case 'store':
       return 'stores'
     case 'reports':
+    case 'savedReports':
+    case 'savedReport':
       return 'reports'
     case 'imports':
     case 'import':

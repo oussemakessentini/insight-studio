@@ -11,6 +11,8 @@ export type Route =
   | { name: 'stores' }
   | { name: 'store'; storeId: number }
   | { name: 'reports' }
+  | { name: 'savedReports' }
+  | { name: 'savedReport'; savedReportId: number }
   | { name: 'imports' }
   | { name: 'import'; importId: number }
   | { name: 'signIn' }
@@ -86,6 +88,9 @@ export function matchRoute(pathname: string): Route {
   const store = /^\/stores\/(\d+)$/.exec(path)
   if (store) return { name: 'store', storeId: Number(store[1]) }
   if (path === '/reports') return { name: 'reports' }
+  if (path === '/reports/saved') return { name: 'savedReports' }
+  const savedReport = /^\/reports\/saved\/(\d+)$/.exec(path)
+  if (savedReport) return { name: 'savedReport', savedReportId: Number(savedReport[1]) }
   if (path === '/imports') return { name: 'imports' }
   const batch = /^\/imports\/(\d+)$/.exec(path)
   if (batch) return { name: 'import', importId: Number(batch[1]) }

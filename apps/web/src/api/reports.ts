@@ -54,9 +54,16 @@ export const reportsApi = {
     getJson<CategoryReport>(`${base}/categories`, { ...f }, signal),
 
   /** URL of the CSV download for a report with the given filters (served as an attachment). */
-  csvUrl: (kind: ReportKind, f: DashboardFilter): string => {
-    const params = new URLSearchParams({ from: f.from, to: f.to })
-    if (f.storeId !== null) params.set('storeId', String(f.storeId))
-    return `${base}/${kind}.csv?${params}`
-  },
+  csvUrl: (kind: ReportKind, f: DashboardFilter): string => exportUrl(kind, 'csv', f),
+
+  /** URL of the PDF download for a report with the given filters (served as an attachment). */
+  pdfUrl: (kind: ReportKind, f: DashboardFilter): string => exportUrl(kind, 'pdf', f),
+}
+
+export type ExportFormat = 'csv' | 'pdf'
+
+function exportUrl(kind: ReportKind, format: ExportFormat, f: DashboardFilter): string {
+  const params = new URLSearchParams({ from: f.from, to: f.to })
+  if (f.storeId !== null) params.set('storeId', String(f.storeId))
+  return `${base}/${kind}.${format}?${params}`
 }
