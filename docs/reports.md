@@ -73,6 +73,31 @@ Same parameters and rows as the JSON endpoints, as a downloadable file:
 - `Content-Disposition: attachment; filename="monthly-<from>-to-<to>.csv"`
   (`categories-<from>-to-<to>.csv`), using the resolved period, so defaults are spelled out.
 
+### `GET /api/reports/monthly.pdf` and `GET /api/reports/categories.pdf`
+
+Same parameters, rules (including the public demo) and figures as the JSON endpoints, rendered by
+`report/pdf/ReportPdf` (OpenPDF, embedded Noto Sans) from the **same** `MonthlyReportResponse` /
+`CategoryReportResponse` objects, so no figure is computed twice:
+
+- A4 portrait: title and business, a details block (period with day count, business time zone,
+  store, currency), summary metrics, the table with a totals row equal to the JSON totals, notes,
+  and on every page "Generated <date time> (<business time zone>)" and "Page X of Y".
+- Long tables break across pages with the header row repeated and rows kept whole; a period
+  without sales shows "No sales in this period" instead of an empty table.
+- `Content-Disposition: attachment; filename="<business-slug>-<kind>-<from>-to-<to>.pdf"`.
+
+### Saved reports
+
+Named definitions (kind, fixed dates or a relative preset such as `last_30_days` or
+`previous_quarter`, optional store) stored per business in `saved_reports` (Flyway V10). Running one
+resolves its range against today **in the business time zone** and calls the same service as the
+endpoints above; its CSV and PDF exports work the same way. Unlike the dashboard's "Last 30 days"
+(which ends on the last day with sales), a saved relative range ends today. Every member can list,
+run and export them; owners and admins (with a verified email) create, edit, rename and delete them.
+API: [saved-reports-api.md](saved-reports-api.md); contract:
+[saved-reports-contract.md](saved-reports-contract.md); web app:
+[frontend-saved-reports.md](frontend-saved-reports.md).
+
 ## CSV format
 
 - A header row, then one line per row. **No totals row**, so the file can be summed or filtered
@@ -115,7 +140,9 @@ categories: category,revenue,units_sold,orders,revenue_share_percent,average_uni
   DTOs in `report/dto`.
 - Web: `pages/ReportsPage.tsx` with Monthly/Categories tabs (`?report=monthly|categories`, the
   default omitted from the URL, restored on refresh and back/forward), the shared filter bar with
-  the store picker, a totals row in each table, "Partial" badges on incomplete months, and an
-  **Export CSV** link (`<a download>`) to the `.csv` endpoint with the current filters.
+  the store picker, a totals row in each table, "Partial" badges on incomplete months, and
+  **Export CSV** / **Export PDF** links to the `.csv` / `.pdf` endpoints with the current filters
+  (downloaded with the business header), plus **Save report** for owners and admins. Saved reports
+  live at `/reports/saved` and `/reports/saved/{id}`.
   Components in `components/reports/`, API calls and types in `api/reports.ts`, styles in
   `styles/reports.css`.

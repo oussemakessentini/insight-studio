@@ -4,7 +4,8 @@ A retail analytics dashboard for a multi-store clothing business. A Spring Boot 
 sales metrics from PostgreSQL; a React app presents revenue trends, store performance, top
 products and recent sales, plus a searchable product catalogue with per-product sales history,
 a sales register with receipt-level detail, per-store performance and monthly/category reports
-with CSV export. Date-range and store filters apply across every page.
+with CSV and PDF export, and saved report definitions that can be re-run with fixed or rolling
+dates. Date-range and store filters apply across every page.
 
 People sign up, create businesses and invite others by email as owners, admins or viewers.
 Every request sees only the business its signed-in user is a member of; owners and admins can set
@@ -47,6 +48,7 @@ Browser ──> Vite dev server (:5173) ──/api proxy──> Spring Boot API 
 | `invitations` | Invitations (V7): SHA-256 of a single-use token, 7-day expiry, invited email and role |
 | `mail_outbox` | Account emails waiting to be sent (V8); bodies erased once sent or abandoned |
 | `email_verification_tokens` | Email verification (V9): SHA-256 of a single-use token, 24-hour expiry; `users.email_verified_at` |
+| `saved_reports` | Saved report definitions (V10): name, kind, fixed dates or a relative preset, optional store of the same business (composite foreign key) |
 
 Revenue is always `SUM(quantity × sale_items.unit_price)`, so historical revenue is unaffected when
 a product's list price changes. Days, weeks and months are bucketed in the business's time zone.
@@ -91,7 +93,8 @@ a product's list price changes. Days, weeks and months are bucketed in the busin
 | `/sales/{id}` | Receipt: date and time, store, and each line's product, quantity, unit price charged (compared with today's list price) and line total |
 | `/stores` | Every store's revenue, share, change vs the previous period, orders, units and average order value, with an all-stores total |
 | `/stores/{id}` | Store: metrics vs the previous period, revenue trend, category mix and top products. Store pages ignore the global store filter |
-| `/reports` | Monthly and Categories reports (tab kept in the URL) with totals rows that equal the dashboard, partial months marked, and CSV export |
+| `/reports` | Monthly and Categories reports (tab kept in the URL) with totals rows that equal the dashboard, partial months marked, CSV and PDF export, and "Save report" (owners and admins) |
+| `/reports/saved`, `/reports/saved/{id}` | Saved reports: run, export (CSV, PDF) for every member; rename, edit and delete for owners and admins |
 | `/imports`, `/imports/{id}` | CSV import (owners and admins): validate (dry run) with a line-by-line error table, import, and history |
 | `/sign-in`, `/sign-up`, `/forgot-password`, `/reset-password`, `/verify-email` | Accounts, recovery and email verification |
 | `/businesses/new` | Create a business (shown after sign-up when you have none); the sidebar switches between your businesses |
@@ -314,8 +317,12 @@ belonging to other businesses return `404`.
 | `/api/stores/{id}`, `/api/stores/{id}/revenue`, `/api/stores/{id}/top-products` | Store metrics vs the previous period with category mix; revenue series and top products (same shapes as the dashboard) |
 | `/api/reports/monthly`, `/api/reports/categories` | Monthly rows (partial months flagged, month-over-month change) and category rows, each with totals that equal the dashboard summary |
 | `/api/reports/monthly.csv`, `/api/reports/categories.csv` | The same reports as RFC 4180 CSV downloads, protected against formula injection |
+| `/api/reports/monthly.pdf`, `/api/reports/categories.pdf` | The same reports as A4 PDFs (business, period, time zone, filters, metrics, table with totals, generation time, page numbers), built from the same figures |
+| `/api/saved-reports[/{id}]` | Saved report definitions: list and get (any member), create, replace/rename, delete (owners and admins) |
+| `/api/saved-reports/{id}/report[.csv\|.pdf]` | Run a saved report for its range resolved today in the business time zone; CSV and PDF exports |
 
-Details: [docs/stores.md](docs/stores.md), [docs/reports.md](docs/reports.md).
+Details: [docs/stores.md](docs/stores.md), [docs/reports.md](docs/reports.md),
+[docs/saved-reports-api.md](docs/saved-reports-api.md), [docs/frontend-saved-reports.md](docs/frontend-saved-reports.md).
 
 **CSV import** (OWNER or ADMIN; viewers get `403`, signed-out visitors `401`): `POST /api/imports`
 (multipart `file`, `dryRun` default `true`) returns `VALIDATED`, `IMPORTED` or `REJECTED` with
@@ -386,6 +393,11 @@ running. They do not touch your local database. The tests cover:
 - email verification: single use, expiry, replaced links, a link verifying only its own account,
   unverified accounts refused every business write, invitations and resets verifying the address,
   and sign-up answering the same for existing addresses without changing them
+- saved reports: every endpoint against OWNER, ADMIN, VIEWER, unverified and signed-out callers;
+  another business's definitions and stores answer 404 everywhere, including exports; every
+  relative preset at month, quarter, year and leap-year boundaries and in time zones a day apart
+- PDF export: totals equal the JSON totals and the CSV rows, a saved run equals the ad-hoc report,
+  long tables break over pages with the header repeated, empty periods say so
 - mail outbox: emails queued while the mail server is down sent after a restart, a dead worker's
   lease taken over, bounded retries ending in FAILED with the body erased, expired links dropped,
   two workers never sending an email twice
@@ -396,6 +408,7 @@ running. They do not touch your local database. The tests cover:
 
 - Stores: per-store performance list and store detail pages
 - Reports: on-demand monthly and category reports with CSV export
+- Saved reports (fixed or rolling date ranges, per store) and PDF export of every report
 - Accounts, businesses and roles (owner, admin, viewer) with server-side authorization and
   business isolation on every endpoint; password recovery by email
 - Email invitations; sessions and rate limits in PostgreSQL for several API instances; trusted
@@ -409,11 +422,11 @@ running. They do not touch your local database. The tests cover:
 
 - Account deletion and email address changes
 - Business settings UI (rename, time zone)
-- Saved reports (named, reusable report definitions)
+- Scheduled report emails (saved reports sent through the mail outbox)
 - Dashboard panels served from Cube
 - Forecasting in `services/analytics`
 - Per-store breakdown on the product page
 - Product mix over time
-- Export of dashboard views (PDF)
+- PDF export of the dashboard view
 - Billing
 - Deployment (containerized API + static web build)
