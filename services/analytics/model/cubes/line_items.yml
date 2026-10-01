@@ -18,6 +18,11 @@ cubes:
       JOIN sales s ON s.id = si.sale_id
       JOIN stores st ON st.id = s.store_id
 
+    # Query-cache key for queries not served by a rollup: changes with any report data.
+    refresh_key:
+      sql: SELECT version, (SELECT MAX(id) FROM businesses) AS last_business FROM report_data_version WHERE id = 1
+      every: 5 second
+
     joins:
       - name: products
         relationship: many_to_one
@@ -101,4 +106,5 @@ cubes:
         time_dimension: line_items.sold_at
         granularity: day
         refresh_key:
-          every: 1 hour
+          sql: SELECT version, (SELECT MAX(id) FROM businesses) AS last_business FROM report_data_version WHERE id = 1
+          every: 5 second

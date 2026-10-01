@@ -103,6 +103,42 @@ test('queryRewrite adds a business filter for every referenced cube', async () =
   assert.deepEqual(out.filters[0], query.filters[0], 'user filters are kept and ANDed');
 });
 
+test('order_categories (category report) is scoped on its own business_id', async () => {
+  const ctx = { securityContext: { businessId: 7 } };
+  const report = await security.queryRewrite({
+    measures: ['order_categories.count', 'order_categories.revenue', 'order_categories.units', 'order_categories.data_version'],
+    dimensions: ['order_categories.category'],
+    timeDimensions: [{ dimension: 'order_categories.sold_at', dateRange: ['2026-06-01', '2026-06-30'] }],
+    filters: [{ member: 'order_categories.store_id', operator: 'equals', values: ['3'] }],
+  }, ctx);
+  assert.deepEqual(report.filters.at(-1), { member: 'order_categories.business_id', operator: 'equals', values: ['7'] });
+  assert.equal(report.filters.length, 2);
+
+  // The API's self-verifying form: the period and store nested in an OR with the marker rows.
+  const verified = await security.queryRewrite({
+    measures: ['order_categories.data_version'],
+    dimensions: ['order_categories.category'],
+    filters: [{ or: [
+      { and: [{ member: 'order_categories.sold_at', operator: 'inDateRange', values: ['2026-06-01', '2026-06-30'] },
+        { member: 'order_categories.store_id', operator: 'equals', values: ['3'] }] },
+      { member: 'order_categories.sold_at', operator: 'notSet' }] }],
+  }, ctx);
+  assert.deepEqual(verified.filters.slice(1), [{ member: 'order_categories.business_id', operator: 'equals', values: ['7'] }]);
+  assert.deepEqual(verified.filters[0], { or: [
+    { and: [{ member: 'order_categories.sold_at', operator: 'inDateRange', values: ['2026-06-01', '2026-06-30'] },
+      { member: 'order_categories.store_id', operator: 'equals', values: ['3'] }] },
+    { member: 'order_categories.sold_at', operator: 'notSet' }] }, 'the OR is kept whole and ANDed with the scope');
+});
+
+test('every cube of the model has a scope member', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const dir = path.join(__dirname, '..', 'model', 'cubes');
+  const names = fs.readdirSync(dir).filter((f) => f.endsWith('.yml'))
+    .flatMap((f) => [...fs.readFileSync(path.join(dir, f), 'utf8').matchAll(/^ {2}- name: (\w+)\r?$/gm)].map((m) => m[1]));
+  assert.deepEqual([...names].sort(), Object.keys(security.SCOPE_MEMBER).sort());
+});
+
 test('a filter naming another business cannot widen the result', async () => {
   const query = {
     measures: ['orders.revenue'],
