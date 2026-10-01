@@ -1101,11 +1101,12 @@ a.button {
   .sidebar {
     transform: translateX(-100%);
     transition: transform 180ms ease;
-    box-shadow: 0 0 40px rgb(11 23 48 / 0.3);
   }
 
+  /* Only while open: a closed drawer's shadow would bleed onto the page's left edge. */
   .sidebar.is-open {
     transform: none;
+    box-shadow: 0 0 40px rgb(11 23 48 / 0.3);
   }
 
   .sidebar .sidebar-close {
