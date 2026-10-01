@@ -132,10 +132,22 @@ categories: category,revenue,units_sold,orders,revenue_share_percent,average_uni
   no code path creates such data.
 - Ties in the category order are broken by name using the database collation.
 
+## Engines: SQL or Cube
+
+`insight.reports.engine` (`REPORTS_ENGINE`) chooses who computes the raw totals: `sql` (default,
+`SqlReportEngine`, the queries described below) or `cube` (`CubeReportEngine`, Cube's REST API with
+the business taken from the caller's membership). `ReportService` does every calculation (month
+buckets, partial months, change, averages, shares) the same way for both, so JSON, CSV and PDF are
+identical; each response says which engine ran in `X-Report-Engine`. With Cube, a report is never
+older than the latest data change (imports included): Cube's answer is checked against
+`report_data_version`, and when Cube is down, too slow or not yet rebuilt the API answers `503`
+with a message and `Retry-After` instead of figures. Details: [cube-reports.md](cube-reports.md).
+
 ## Implementation
 
 - API (`apps/api/.../report/`): `ReportController` -> `ReportService`
-  (`@Transactional(readOnly = true)`) -> `ReportQueries` (one aggregate SQL statement per report);
+  (`@Transactional(readOnly = true)`) -> a `ReportEngine`: `SqlReportEngine` (one aggregate SQL
+  statement per report) or `CubeReportEngine` (see above);
   `CsvWriter` (RFC 4180 and formula protection, no dependency) and `ReportCsv` (column layout);
   DTOs in `report/dto`.
 - Web: `pages/ReportsPage.tsx` with Monthly/Categories tabs (`?report=monthly|categories`, the

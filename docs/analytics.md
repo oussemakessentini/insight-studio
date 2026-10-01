@@ -188,8 +188,11 @@ query) can still be served from the rollups; `products.business_id` is there bec
 touching `products.*` gets a `products.business_id` filter too. All rolled-up measures are
 additive, so these two rollups serve totals, day/week/month series, per-store and per-category
 queries, and AOV. Rollups are built per query time zone; `CUBEJS_SCHEDULED_REFRESH_TIMEZONES`
-tells the refresh worker which zones to build ahead of time. They refresh every hour, so Cube
-can lag new sales by up to an hour.
+tells the refresh worker which zones to build ahead of time (list every business's zone). Their
+refresh key is the data version (`report_data_version`, Flyway V11, bumped by triggers on every
+change to sales, items, products or stores), checked every second, and the report engine verifies
+that the figures it gets are not older than the latest change: see
+[cube-reports.md](cube-reports.md#freshness-never-older-than-the-data).
 
 The rollups are **not partitioned**, on purpose. With `partition_granularity: month`,
 Cube v1.7.46 produced wrong numbers that the reconciliation caught:
@@ -259,11 +262,14 @@ integration test, 503, 502 mapping).
 
 ## Limitations and follow-ups
 
-- **Only the summary** is served through the API; the dashboard itself still uses SQL.
+- **Reports** (monthly, categories, saved reports and their CSV/PDF exports) use Cube when
+  `REPORTS_ENGINE=cube` ([cube-reports.md](cube-reports.md)); the dashboard and the other pages
+  still use SQL.
 - **Single Cube instance** runs the API and the refresh worker; a deployment would split them
   and run Cube Store as a cluster.
 - **Secret rotation** needs the API and Cube restarted with the new value.
-- **Freshness:** rollups refresh hourly.
+- **Freshness:** rollups rebuild after every data change (data-version refresh key); `/api/analytics/summary`
+  itself does not verify the version the way the report engine does.
 - **Product/store consistency:** `line_items` is scoped by the store's business and `products` by
   the product's business. A sale item whose product belongs to another business than the store
   is not prevented by the schema; such a row would be filtered out of product queries.

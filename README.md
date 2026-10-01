@@ -200,7 +200,10 @@ docker compose --profile analytics up -d
 
 and start the API with `INSIGHT_CUBE_URL=http://localhost:4000`. The browser never talks to Cube:
 the API signs a 60-second token carrying the member's business id, and Cube adds that business
-filter to every query. Plain `docker compose up -d` starts only PostgreSQL and Mailpit. Model, security
+filter to every query. Add `REPORTS_ENGINE=cube` to have Cube compute the monthly and category
+reports (saved reports and CSV/PDF exports included) instead of SQL; figures are checked against the
+latest data change, so an import shows up in the next report, and if Cube cannot answer in time the
+API says so (`503`) rather than showing stale numbers. See [docs/cube-reports.md](docs/cube-reports.md). Plain `docker compose up -d` starts only PostgreSQL and Mailpit. Model, security
 and the reconciliation script: [docs/analytics.md](docs/analytics.md).
 
 ## Demo data
@@ -377,6 +380,11 @@ running. They do not touch your local database. The tests cover:
 - business isolation: two businesses with their own members; neither can read or modify the
   other's dashboard, products, sales, stores, reports, imports, members or analytics, whatever
   ids or `X-Business-Id` they send
+- Cube reports (real PostgreSQL, Cube Store and Cube containers): the Cube engine's JSON equals the
+  SQL engine's and an independent SQL query for six businesses in four time zones (local midnight,
+  month ends, DST changes, stores, empty periods, price changes, receipts without items), CSV/PDF
+  equality, an import or catalog change visible in the very next report, and 503 answers when Cube
+  is stopped or behind
 - Cube: tokens carry only the member's business, and Cube is never called for a refused request
   (plus `node --test` in `services/analytics` for the Cube-side filter)
 - validation and error responses
@@ -417,12 +425,14 @@ running. They do not touch your local database. The tests cover:
   with bounded retries
 - CSV import for owners and admins of their own business (never the public demo)
 - Private Cube analytics behind the API, scoped to the member's business
+- Reports computed by Cube (selectable; SQL kept during the migration) with verified freshness
 
 **Later:**
 
 - Account deletion and email address changes
 - Business settings UI (rename, time zone)
 - Scheduled report emails (saved reports sent through the mail outbox)
+- Make Cube the default report engine, then retire the SQL report queries
 - Dashboard panels served from Cube
 - Forecasting in `services/analytics`
 - Per-store breakdown on the product page
