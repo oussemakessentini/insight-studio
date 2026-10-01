@@ -1,6 +1,12 @@
 # One row per order: a receipt (sales row) with at least one line item.
 # The inner join on sale_items drops receipts without items, matching the API's
 # definition (apps/api/.../reporting/ReportSql.java), so every measure agrees with it.
+#
+# Freshness marker (docs/cube-reports.md): every row carries data_version, the
+# report_data_version read by the same SQL statement as the rows, so a table built from
+# this SQL holds exactly the data of that version. One extra "marker" row per business
+# (id, store_id and sold_at NULL; no revenue, units or count) carries the version even
+# for a business without sales; queries with a date range never see it.
 cubes:
   - name: orders
     title: Orders
@@ -12,11 +18,22 @@ cubes:
              s.receipt_number,
              s.sold_at,
              SUM(si.quantity)                 AS units,
-             SUM(si.quantity * si.unit_price) AS revenue
+             SUM(si.quantity * si.unit_price) AS revenue,
+             (SELECT v.version FROM report_data_version v WHERE v.id = 1) AS data_version
       FROM sales s
       JOIN stores st ON st.id = s.store_id
       JOIN sale_items si ON si.sale_id = s.id
       GROUP BY s.id, st.business_id, s.store_id, s.receipt_number, s.sold_at
+      UNION ALL
+      SELECT NULL, b.id, NULL, NULL, NULL, NULL, NULL, v.version
+      FROM businesses b
+      CROSS JOIN report_data_version v
+      WHERE v.id = 1
+
+    # Query-cache key for queries not served by a rollup: changes with any report data.
+    refresh_key:
+      sql: SELECT version, (SELECT MAX(id) FROM businesses) AS last_business FROM report_data_version WHERE id = 1
+      every: 1 second
 
     joins:
       - name: stores
@@ -52,7 +69,8 @@ cubes:
     measures:
       - name: count
         title: Orders
-        description: Number of receipts with at least one line item.
+        description: Number of receipts with at least one line item (marker rows have no id and are not counted).
+        sql: id
         type: count
 
       - name: revenue
@@ -74,11 +92,22 @@ cubes:
         type: number
         format: currency
 
+      - name: data_version
+        title: Data version
+        description: >
+          report_data_version the rows were read at (the same for every row of one build).
+          The API compares it with the version it read before querying (docs/cube-reports.md).
+        sql: data_version
+        type: max
+
     pre_aggregations:
-      # Daily totals per business and store. Additive measures only, so any coarser time
-      # bucket (week, month) and any subset of stores rolls up exactly. business_id is a
-      # dimension so the mandatory business filter (security.js) is served from this rollup,
-      # which all businesses share.
+      # Daily totals per business and store. Additive measures only (plus the max of the
+      # data version), so any coarser time bucket (week, month) and any subset of stores rolls
+      # up exactly. business_id is a dimension so the mandatory business filter (security.js)
+      # is served from this rollup, which all businesses share.
+      #
+      # Rebuilt whenever report_data_version changes (checked every second, and on every
+      # request the API sends with cache "must-revalidate").
       #
       # Deliberately not partitioned. With partition_granularity, Cube v1.7.46
       #  - clips a partition built on demand to the requesting query's date range and
@@ -93,10 +122,12 @@ cubes:
           - orders.count
           - orders.revenue
           - orders.units
+          - orders.data_version
         dimensions:
           - orders.business_id
           - orders.store_id
         time_dimension: orders.sold_at
         granularity: day
         refresh_key:
-          every: 1 hour
+          sql: SELECT version, (SELECT MAX(id) FROM businesses) AS last_business FROM report_data_version WHERE id = 1
+          every: 1 second

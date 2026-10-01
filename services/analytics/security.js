@@ -43,6 +43,7 @@ const CLOCK_SKEW_SECONDS = 30;
 const SCOPE_MEMBER = {
   orders: 'orders.business_id',
   line_items: 'line_items.business_id',
+  order_categories: 'order_categories.business_id',
   stores: 'stores.business_id',
   products: 'products.business_id',
   businesses: 'businesses.id',

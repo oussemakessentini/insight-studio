@@ -562,6 +562,7 @@ class SavedReportApiIntegrationTest extends PostgresIntegrationTest {
 
             String run = body(owner.perform(get("/api/saved-reports/" + id + "/report"))
                     .andExpect(status().isOk())
+                    .andExpect(header().string("X-Report-Engine", "sql"))
                     .andExpect(jsonPath("$.savedReport.id").value(id))
                     .andExpect(jsonPath("$.savedReport.storeName").value("Alpha"))
                     .andExpect(jsonPath("$.categories").doesNotExist())
@@ -573,6 +574,7 @@ class SavedReportApiIntegrationTest extends PostgresIntegrationTest {
             // CSV: byte for byte the ad-hoc export; its rows add up to the JSON totals.
             MvcResult csv = owner.perform(get("/api/saved-reports/" + id + "/report.csv"))
                     .andExpect(status().isOk())
+                    .andExpect(header().string("X-Report-Engine", "sql"))
                     .andExpect(content().contentType("text/csv;charset=UTF-8"))
                     .andExpect(header().string("Content-Disposition",
                             "attachment; filename=\"test-co-monthly-2026-03-20-to-2026-06-10.csv\""))
@@ -599,6 +601,7 @@ class SavedReportApiIntegrationTest extends PostgresIntegrationTest {
             // PDF: the totals row is the JSON totals.
             MvcResult pdf = owner.perform(get("/api/saved-reports/" + id + "/report.pdf"))
                     .andExpect(status().isOk())
+                    .andExpect(header().string("X-Report-Engine", "sql"))
                     .andExpect(content().contentType(MediaType.APPLICATION_PDF))
                     .andExpect(header().string("Content-Disposition",
                             "attachment; filename=\"test-co-monthly-2026-03-20-to-2026-06-10.pdf\""))

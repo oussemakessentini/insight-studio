@@ -10,6 +10,7 @@ cube.js                     Cube config: security hooks, refresh contexts and ti
 security.js                 checkAuth (HS256 JWT with businessId), queryRewrite (mandatory business filter), app ids
 model/cubes/orders.yml      orders: one row per receipt with >= 1 line item; daily rollup by business and store
 model/cubes/line_items.yml  line_items: sale items for product/category breakdowns; daily rollup by business, store and category
+model/cubes/order_categories.yml  order_categories: one row per order and category (category report); daily rollup
 model/cubes/catalog.yml     businesses, stores, products
 scripts/reconcile.mjs       compares Cube with the API (Node 20+, no dependencies)
 test/security.test.js       unit tests for security.js: node --test services/analytics/test/security.test.js
@@ -42,4 +43,6 @@ CUBE_URL=http://localhost:4000 API_URL=http://localhost:8080 CUBEJS_API_SECRET=<
 
 The business id comes from `/api/session` (public demo) or `BUSINESS_ID`. It exits non-zero if
 any figure differs by more than 0.005. See [docs/analytics.md](../../docs/analytics.md) for the
-security model, model, measures and limitations.
+security model, model, measures and limitations, and
+[docs/cube-reports.md](../../docs/cube-reports.md) for the reports served from Cube (data-version
+marker rows, refresh keys and the API's freshness check).

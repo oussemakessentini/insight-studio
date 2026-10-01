@@ -8,7 +8,8 @@
 // reconciles the API's public demo business: its id comes from BUSINESS_ID when set, otherwise
 // from GET /api/session (`demo.businessId`). Each Cube request gets a fresh 60-second HS256
 // token signed with CUBEJS_API_SECRET, which is read from the environment only.
-// When the API has Cube configured, /api/analytics/summary is reconciled too.
+// When the API has Cube configured, /api/analytics/summary is reconciled too. The category
+// report's per-category order counts are reconciled against Cube's order_categories cube.
 // Exits 1 on any mismatch beyond 0.005, 2 on errors.
 
 import { createHmac } from 'node:crypto';
@@ -252,6 +253,40 @@ async function main() {
       console.log(`${`categories ${w.name} ${store.label}`.padEnd(62)} ${apiTotals.size} categories`);
     }
   }
+
+  // ---------------------------------------------------------------- 3b. category report
+
+  // order_categories (one row per order and category) against /api/reports/categories:
+  // revenue, units and the number of orders containing each category, which is exact in Cube
+  // because each (order, category) row is counted once. The API answers with whichever report
+  // engine it runs (X-Report-Engine); with the SQL engine this is an independent check.
+  for (const w of windows) {
+    for (const store of stores) {
+      const [rows, report] = await Promise.all([
+        cubeLoad({
+          measures: ['order_categories.revenue', 'order_categories.units', 'order_categories.count'],
+          dimensions: ['order_categories.category'],
+          timeDimensions: [{ dimension: 'order_categories.sold_at', dateRange: [w.from, w.to] }],
+          filters: [...storeFilter('order_categories.store_id', store.id)],
+          timezone: timeZone,
+        }),
+        apiGet('/api/reports/categories', { from: w.from, to: w.to, storeId: store.id }),
+      ]);
+      const cubeByCategory = new Map(rows.map((r) => [r['order_categories.category'], r]));
+      for (const row of report.rows) {
+        const cube = cubeByCategory.get(row.category) || {};
+        cubeByCategory.delete(row.category);
+        const label = `category report ${row.category} ${w.name} ${store.label}`;
+        compare(`${label} revenue`, round2(num(cube['order_categories.revenue'])), row.revenue);
+        compare(`${label} units`, cube['order_categories.units'], row.unitsSold);
+        compare(`${label} orders`, cube['order_categories.count'], row.orders);
+      }
+      for (const category of cubeByCategory.keys()) {
+        mismatches.push(`category report ${category} ${w.name} ${store.label}: present in Cube but not in the API`);
+      }
+    }
+  }
+  console.log(`${'category report (orders per category)'.padEnd(62)} ${windows.length * stores.length} window/store pairs`);
 
   // ---------------------------------------------------------------- 4. API analytics endpoint
 

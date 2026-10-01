@@ -36,6 +36,11 @@ public final class HttpApiClient implements AutoCloseable {
         return send(request(path).header(header, value).GET(), null);
     }
 
+    /** A GET whose body is kept as bytes (PDF downloads); response cookies are not stored. */
+    public HttpResponse<byte[]> getBytes(String path) throws IOException, InterruptedException {
+        return http.send(request(path).GET().build(), HttpResponse.BodyHandlers.ofByteArray());
+    }
+
     /** POSTs JSON with the CSRF header (when the client has the cookie). */
     public HttpResponse<String> postJson(String path, String json) throws IOException, InterruptedException {
         return send(request(path).header("Content-Type", "application/json")

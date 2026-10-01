@@ -6,12 +6,11 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.time.Clock;
 import java.time.Duration;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.Environment;
-import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.util.StringUtils;
-import org.springframework.web.client.RestClient;
 
 /**
  * Wires the Cube client when a Cube URL is configured. Each setting has a fallback so the API and
@@ -22,7 +21,8 @@ import org.springframework.web.client.RestClient;
  *   <li>secret: {@code insight.cube.api-secret}, else {@code CUBEJS_API_SECRET} (environment
  *       variable or {@code infra/.env} entry).</li>
  * </ul>
- * A URL without a usable secret fails startup rather than at the first request.
+ * A URL without a usable secret fails startup rather than at the first request. The client is
+ * also used by the Cube report engine ({@code insight.reports.engine=cube}).
  */
 @Configuration(proxyBeanMethods = false)
 class CubeConfiguration {
@@ -33,10 +33,16 @@ class CubeConfiguration {
     private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(5);
     private static final Duration READ_TIMEOUT = Duration.ofSeconds(20);
 
+    /** A null bean (absent for {@code ObjectProvider.getIfAvailable()}) when analytics is not configured. */
+    @Bean
+    CubeClient analyticsCubeClient(CubeProperties properties, Environment environment) {
+        return cubeClient(properties, environment);
+    }
+
     @Bean
     AnalyticsService analyticsService(
-            CurrentBusiness currentBusiness, ReportingContext reporting, CubeProperties properties, Environment environment) {
-        return new AnalyticsService(currentBusiness, reporting, cubeClient(properties, environment));
+            CurrentBusiness currentBusiness, ReportingContext reporting, ObjectProvider<CubeClient> cube) {
+        return new AnalyticsService(currentBusiness, reporting, cube.getIfAvailable());
     }
 
     /** {@code null} when analytics is not configured; {@link AnalyticsService} then answers 503. */
@@ -61,12 +67,6 @@ class CubeConfiguration {
                 .connectTimeout(CONNECT_TIMEOUT)
                 .followRedirects(HttpClient.Redirect.NEVER)
                 .build();
-        JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(httpClient);
-        requestFactory.setReadTimeout(READ_TIMEOUT);
-        RestClient http = RestClient.builder()
-                .baseUrl(base.toString())
-                .requestFactory(requestFactory)
-                .build();
-        return new CubeClient(http, new CubeTokens(secret, Clock.systemUTC()));
+        return new CubeClient(httpClient, base, READ_TIMEOUT, new CubeTokens(secret, Clock.systemUTC()));
     }
 }

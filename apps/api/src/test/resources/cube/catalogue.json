@@ -1,0 +1,85 @@
+{
+  "query": {
+    "measures": [
+      "order_categories.data_version"
+    ],
+    "dimensions": [
+      "order_categories.category"
+    ],
+    "timeDimensions": [],
+    "limit": 10000,
+    "timezone": "Europe/Paris",
+    "filters": [
+      {
+        "member": "order_categories.business_id",
+        "operator": "equals",
+        "values": [
+          "1"
+        ]
+      },
+      {
+        "member": "order_categories.business_id",
+        "operator": "equals",
+        "values": [
+          "1"
+        ]
+      }
+    ],
+    "rowLimit": 10000
+  },
+  "lastRefreshTime": "2026-10-01T14:41:57.000Z",
+  "usedPreAggregations": {
+    "prod_pre_aggregations.order_categories_daily_by_store_category": {
+      "preAggregationId": "order_categories.daily_by_store_category",
+      "lastUpdatedAt": 1790865717000,
+      "type": "rollup"
+    }
+  },
+  "annotation": {
+    "segments": {},
+    "measures": {
+      "order_categories.data_version": {
+        "title": "Order categories Data version",
+        "shortTitle": "Data version",
+        "description": "report_data_version the rows were read at (docs/cube-reports.md).",
+        "type": "number",
+        "drillMembers": [],
+        "drillMembersGrouped": {
+          "measures": [],
+          "dimensions": []
+        }
+      }
+    },
+    "dimensions": {
+      "order_categories.category": {
+        "title": "Order categories Category",
+        "shortTitle": "Category",
+        "type": "string"
+      }
+    },
+    "timeDimensions": {}
+  },
+  "dataSource": "default",
+  "dbType": "postgres",
+  "extDbType": "cubestore",
+  "external": true,
+  "slowQuery": false,
+  "data": [
+    {
+      "order_categories.category": "Tops",
+      "order_categories.data_version": "7"
+    },
+    {
+      "order_categories.category": "Zzz",
+      "order_categories.data_version": "7"
+    },
+    {
+      "order_categories.category": null,
+      "order_categories.data_version": "7"
+    },
+    {
+      "order_categories.category": "Outerwear",
+      "order_categories.data_version": "7"
+    }
+  ]
+}

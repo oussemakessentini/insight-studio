@@ -1,0 +1,123 @@
+{
+  "query": {
+    "measures": [
+      "orders.revenue",
+      "orders.count",
+      "orders.units",
+      "orders.data_version"
+    ],
+    "dimensions": [],
+    "timeDimensions": [
+      {
+        "dimension": "orders.sold_at",
+        "dateRange": [
+          "2025-01-01T00:00:00.000",
+          "2025-02-28T23:59:59.999"
+        ],
+        "granularity": "month"
+      }
+    ],
+    "limit": 10000,
+    "timezone": "Europe/Paris",
+    "filters": [
+      {
+        "member": "orders.business_id",
+        "operator": "equals",
+        "values": [
+          "1"
+        ]
+      },
+      {
+        "member": "orders.business_id",
+        "operator": "equals",
+        "values": [
+          "1"
+        ]
+      }
+    ],
+    "rowLimit": 10000
+  },
+  "lastRefreshTime": "2026-10-01T14:41:54.000Z",
+  "usedPreAggregations": {
+    "prod_pre_aggregations.orders_daily_by_store": {
+      "preAggregationId": "orders.daily_by_store",
+      "lastUpdatedAt": 1790865714000,
+      "type": "rollup"
+    }
+  },
+  "annotation": {
+    "measures": {
+      "orders.count": {
+        "title": "Orders Orders",
+        "shortTitle": "Orders",
+        "description": "Number of receipts with at least one line item (marker rows have no id and are not counted).",
+        "type": "number",
+        "drillMembers": [],
+        "drillMembersGrouped": {
+          "measures": [],
+          "dimensions": []
+        }
+      },
+      "orders.data_version": {
+        "title": "Orders Data version",
+        "shortTitle": "Data version",
+        "description": "report_data_version the rows were read at (the same for every row of one build). The API compares it with the version it read before querying (docs/cube-reports.md).\n",
+        "type": "number",
+        "drillMembers": [],
+        "drillMembersGrouped": {
+          "measures": [],
+          "dimensions": []
+        }
+      },
+      "orders.units": {
+        "title": "Orders Units sold",
+        "shortTitle": "Units sold",
+        "type": "number",
+        "drillMembers": [],
+        "drillMembersGrouped": {
+          "measures": [],
+          "dimensions": []
+        }
+      },
+      "orders.revenue": {
+        "title": "Orders Revenue",
+        "shortTitle": "Revenue",
+        "description": "SUM(quantity * unit_price) over the order's line items.",
+        "type": "number",
+        "format": "currency",
+        "drillMembers": [],
+        "drillMembersGrouped": {
+          "measures": [],
+          "dimensions": []
+        }
+      }
+    },
+    "dimensions": {},
+    "segments": {},
+    "timeDimensions": {
+      "orders.sold_at.month": {
+        "title": "Orders Sold at",
+        "shortTitle": "Sold at",
+        "description": "Sale timestamp; day/week/month buckets follow the query's timezone.",
+        "type": "time",
+        "granularity": {
+          "name": "month",
+          "title": "month",
+          "interval": "1 month"
+        }
+      },
+      "orders.sold_at": {
+        "title": "Orders Sold at",
+        "shortTitle": "Sold at",
+        "description": "Sale timestamp; day/week/month buckets follow the query's timezone.",
+        "type": "time"
+      }
+    }
+  },
+  "dataSource": "default",
+  "dbType": "postgres",
+  "extDbType": "cubestore",
+  "external": true,
+  "slowQuery": false,
+  "data": []
+}
