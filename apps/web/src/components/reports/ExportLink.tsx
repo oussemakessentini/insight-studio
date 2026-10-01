@@ -1,21 +1,24 @@
 import { useEffect, useRef, useState, type MouseEvent } from 'react'
 import { downloadFile } from '../../api/client'
+import type { ExportFormat } from '../../api/reports'
 
-interface ExportCsvLinkProps {
+interface ExportLinkProps {
   href: string
-  /** Accessible description of what is downloaded, e.g. "Monthly report". */
+  /** Accessible description of what is downloaded, e.g. "monthly report". */
   label: string
+  format: ExportFormat
 }
 
 /**
- * Downloads the report CSV. A plain link can't send the selected business (X-Business-Id), so a
- * normal click fetches the file and saves it; the href remains for "open in new tab" and the like.
+ * Downloads a report as CSV or PDF. A plain link can't send the selected business (X-Business-Id),
+ * so a normal click fetches the file and saves it; the href remains for "open in new tab" and the like.
  */
-export function ExportCsvLink({ href, label }: ExportCsvLinkProps) {
+export function ExportLink({ href, label, format }: ExportLinkProps) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const controller = useRef<AbortController | null>(null)
   useEffect(() => () => controller.current?.abort(), [])
+  const formatName = format.toUpperCase()
 
   const onClick = async (event: MouseEvent<HTMLAnchorElement>) => {
     if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
@@ -27,7 +30,7 @@ export function ExportCsvLink({ href, label }: ExportCsvLinkProps) {
     setBusy(true)
     setError(null)
     try {
-      await downloadFile(href, `${label.replaceAll(' ', '-')}.csv`, current.signal)
+      await downloadFile(href, `${label.replaceAll(' ', '-')}.${format}`, current.signal)
     } catch (err) {
       if (!current.signal.aborted) setError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -41,7 +44,7 @@ export function ExportCsvLink({ href, label }: ExportCsvLinkProps) {
         className="button button-secondary reports-export"
         href={href}
         download
-        aria-label={`Export ${label} as CSV`}
+        aria-label={`Export ${label} as ${formatName}`}
         aria-busy={busy}
         onClick={(e) => void onClick(e)}
       >
@@ -61,7 +64,7 @@ export function ExportCsvLink({ href, label }: ExportCsvLinkProps) {
           <path d="m7 10 5 5 5-5" />
           <path d="M5 19h14" />
         </svg>
-        {busy ? 'Exporting…' : 'Export CSV'}
+        {busy ? 'Exporting…' : `Export ${formatName}`}
       </a>
       {error && (
         <span className="reports-export-error" role="alert">
@@ -69,5 +72,15 @@ export function ExportCsvLink({ href, label }: ExportCsvLinkProps) {
         </span>
       )}
     </span>
+  )
+}
+
+/** The CSV and PDF downloads of one report, side by side. */
+export function ExportLinks({ csvHref, pdfHref, label }: { csvHref: string; pdfHref: string; label: string }) {
+  return (
+    <>
+      <ExportLink href={csvHref} label={label} format="csv" />
+      <ExportLink href={pdfHref} label={label} format="pdf" />
+    </>
   )
 }
