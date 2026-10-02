@@ -221,9 +221,9 @@ when a cube of the model has no scope member. Marker rows carry their business i
 
 ## Limitations
 
-- A line item whose product belongs to another business than its store (not produced by any code
-  path) is left out of category rows by both engines, but Cube's distinct order total
-  (`orders.count`) would still count its order; the SQL engine would not.
+- A line item whose product belongs to another business than its store cannot exist: Flyway V12
+  enforces it with composite foreign keys (and refuses to migrate a database that already holds
+  one), so both engines always count the same orders.
 - Category ties are broken by name in the database's collation: the Cube engine sorts its rows with one
   small PostgreSQL statement (`jsonb_to_recordset ... ORDER BY revenue DESC, category`), exactly like
   the SQL engine's `ORDER BY`.

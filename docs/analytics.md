@@ -271,7 +271,7 @@ integration test, 503, 502 mapping).
 - **Freshness:** rollups rebuild after every data change (data-version refresh key); `/api/analytics/summary`
   itself does not verify the version the way the report engine does.
 - **Product/store consistency:** `line_items` is scoped by the store's business and `products` by
-  the product's business. A sale item whose product belongs to another business than the store
-  is not prevented by the schema; such a row would be filtered out of product queries.
+  the product's business. Since Flyway V12 the database guarantees they are the same business
+  (composite foreign keys), so no row can fall between them.
 - The CSV import tables (`import_batches`, `sales.import_batch_id`) are not referenced by the
   model; imported sales count like any other sales.

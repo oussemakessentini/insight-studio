@@ -1,6 +1,7 @@
 package com.oussamaksantini.insightstudio.report;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.jayway.jsonpath.JsonPath;
 import com.oussamaksantini.insightstudio.SqlFixture;
@@ -39,6 +40,7 @@ import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.api.TestMethodOrder;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
@@ -312,6 +314,38 @@ class CubeReportsIntegrationTest {
         body = freshReport(paris.cube(), "/api/reports/categories" + window.query(null));
         assertThat(JsonPath.<List<Double>>read(body, "$.rows[?(@.category == 'Gift cards')].revenue")).containsExactly(100.0);
         assertThat(body).isEqualTo(paris.sql().get("/api/reports/categories" + window.query(null)).body());
+    }
+
+    @Test
+    @Order(5)
+    void crossBusinessSaleItemsAreRejectedAndBothEnginesStayConsistent() throws Exception {
+        long newYorkSale = jdbc.queryForObject("SELECT MIN(id) FROM sales WHERE business_id = ?", Long.class, newYork.id());
+        long parisProduct = jdbc.queryForObject("SELECT MIN(id) FROM products WHERE business_id = ?", Long.class, paris.id());
+        long version = jdbc.queryForObject("SELECT version FROM report_data_version", Long.class);
+
+        // Flyway V12: neither a new item nor a changed one may join New York's sale to Paris's product.
+        assertThatThrownBy(() -> jdbc.update(
+                "INSERT INTO sale_items (sale_id, product_id, quantity, unit_price) VALUES (?, ?, 5, 999.00)",
+                newYorkSale, parisProduct))
+                .isInstanceOf(DataIntegrityViolationException.class)
+                .hasMessageContaining("fk_sale_items_product_business");
+        assertThatThrownBy(() -> jdbc.update("UPDATE sale_items SET product_id = ? WHERE sale_id = ?", parisProduct, newYorkSale))
+                .isInstanceOf(DataIntegrityViolationException.class);
+        // The refused statements rolled back, so the data (and its version) did not change.
+        assertThat(jdbc.queryForObject("SELECT version FROM report_data_version", Long.class)).isEqualTo(version);
+
+        // Both engines still agree with each other and with the independent SQL, for both businesses.
+        Window window = WINDOWS.getFirst();
+        for (Biz biz : List.of(newYork, paris)) {
+            for (String kind : List.of("monthly", "categories")) {
+                String path = "/api/reports/" + kind + window.query(null);
+                String body = freshReport(biz.cube(), path);
+                assertThat(body).as(biz.name() + " " + kind).isEqualTo(biz.sql().get(path).body());
+                SoftAssertions softly = new SoftAssertions();
+                checkAgainstIndependentSql(softly, biz, window.from(), window.to(), null, kind, body);
+                softly.assertAll();
+            }
+        }
     }
 
     // ---------------------------------------------------------------- isolation

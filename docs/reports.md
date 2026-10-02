@@ -127,9 +127,9 @@ categories: category,revenue,units_sold,orders,revenue_share_percent,average_uni
   revenue, orders and units (covered by `ReportApiIntegrationTest.AgreementWithDashboard`).
   Category totals come from the same SQL statement as the rows (`GROUPING SETS`), so their
   orders are distinct across categories.
-- Category rows are built from the catalogue (`products.business_id`); a line item pointing at
-  another business's product would be missing from them. The schema does not prevent that, but
-  no code path creates such data.
+- Category rows are built from the catalogue (`products.business_id`). A line item cannot point
+  at another business's product: the database refuses it (Flyway V12, composite foreign keys on
+  `sales.business_id` and `sale_items.business_id`).
 - Ties in the category order are broken by name using the database collation.
 
 ## Engines: SQL or Cube
