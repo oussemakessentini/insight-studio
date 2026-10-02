@@ -83,7 +83,7 @@ class ImportValidatorTest {
                 .singleElement()
                 .satisfies(e -> {
                     assertThat(e.line()).isEqualTo(2);
-                    assertThat(e.column()).isEqualTo("sold_at");
+                    assertThat(e.field()).isEqualTo("sold_at");
                     assertThat(e.message()).contains("does not exist");
                 });
     }
@@ -102,7 +102,7 @@ class ImportValidatorTest {
                 BOS,R-2,2026-09-01T10:00:00Z,TEE-1,1.5,1.999
                 BOS,R-3,2026-09-01,TEE-1,abc,1e3
                 """);
-        assertThat(errors).extracting(ImportError::line, ImportError::column).containsExactly(
+        assertThat(errors).extracting(ImportError::line, ImportError::field).containsExactly(
                 tuple(2, "store_code"), tuple(2, "receipt_number"), tuple(2, "sold_at"), tuple(2, "sku"),
                 tuple(2, "quantity"), tuple(2, "unit_price"),
                 tuple(3, "quantity"), tuple(3, "unit_price"),
@@ -114,13 +114,13 @@ class ImportValidatorTest {
     @Test
     void storeCodesAndSkusAreCaseSensitive() {
         assertThat(errors("bos,R-1,2026-09-01T10:00:00Z,tee-1,1,1.00\n"))
-                .extracting(ImportError::column).containsExactly("store_code", "sku");
+                .extracting(ImportError::field).containsExactly("store_code", "sku");
     }
 
     @Test
     void wrongNumberOfValuesIsARowError() {
         assertThat(errors("BOS,R-1,2026-09-01T10:00:00Z,TEE-1,1\nBOS,R-2,2026-09-01T10:00:00Z,TEE-1,1,1.00,extra\n"))
-                .extracting(ImportError::line, ImportError::column, ImportError::message)
+                .extracting(ImportError::line, ImportError::field, ImportError::message)
                 .containsExactly(
                         tuple(2, null, "Expected 6 values but found 5."),
                         tuple(3, null, "Expected 6 values but found 7."));
@@ -131,7 +131,7 @@ class ImportValidatorTest {
         String forty = "R".repeat(40);
         assertThat(errors("BOS," + forty + ",2026-09-01T10:00:00Z,TEE-1,1,1.00\n")).isEmpty();
         assertThat(errors("BOS," + forty + "1,2026-09-01T10:00:00Z,TEE-1,1,1.00\n"))
-                .singleElement().extracting(ImportError::column).isEqualTo("receipt_number");
+                .singleElement().extracting(ImportError::field).isEqualTo("receipt_number");
     }
 
     @Test
@@ -139,7 +139,7 @@ class ImportValidatorTest {
         assertThat(errors("BOS,R-1,2026-09-01T10:00:00Z,TEE-1,1,0\nBOS,R-2,2026-09-01T10:00:00Z,TEE-1,999999999,0.5\n"))
                 .isEmpty();
         assertThat(errors("BOS,R-1,2026-09-01T10:00:00Z,TEE-1,+1,.50\n"))
-                .extracting(ImportError::column).containsExactly("quantity", "unit_price");
+                .extracting(ImportError::field).containsExactly("quantity", "unit_price");
     }
 
     @Test
@@ -150,8 +150,8 @@ class ImportValidatorTest {
                 WEB,R-9,2026-09-01T10:00:00Z,TEE-1,1,1.00
                 BOS,R-1,2026-09-01T14:31:00-04:00,TEE-1,1,1.00
                 """);
-        assertThat(errors).extracting(ImportError::line, ImportError::column).contains(tuple(5, "sold_at"));
-        assertThat(errors.stream().filter(e -> "sold_at".equals(e.column())).findFirst().orElseThrow().message())
+        assertThat(errors).extracting(ImportError::line, ImportError::field).contains(tuple(5, "sold_at"));
+        assertThat(errors.stream().filter(e -> "sold_at".equals(e.field())).findFirst().orElseThrow().message())
                 .contains("line 2");
     }
 
@@ -164,7 +164,7 @@ class ImportValidatorTest {
                 """);
         assertThat(errors).singleElement().satisfies(e -> {
             assertThat(e.line()).isEqualTo(4);
-            assertThat(e.column()).isEqualTo("sku");
+            assertThat(e.field()).isEqualTo("sku");
             assertThat(e.message()).contains("line 2");
         });
     }
@@ -183,7 +183,7 @@ class ImportValidatorTest {
                 WEB,R-1,2026-09-01T10:00:00Z,TEE-1,1,1.00
                 BOS,R-1,2026-09-01T10:00:00Z,JNS-1,1,1.00
                 """, Set.of(new ReceiptKey(1L, "R-1"))).errors();
-        assertThat(errors).extracting(ImportError::line, ImportError::column)
+        assertThat(errors).extracting(ImportError::line, ImportError::field)
                 .containsExactly(tuple(2, "receipt_number"), tuple(4, "receipt_number"));
         assertThat(errors.getFirst().message()).contains("already exists for store BOS");
     }

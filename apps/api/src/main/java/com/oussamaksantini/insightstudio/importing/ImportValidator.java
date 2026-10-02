@@ -22,9 +22,10 @@ import java.util.function.Function;
 import java.util.regex.Pattern;
 
 /**
- * Checks the data rows of an import file against the CSV rules and the current business's stores
- * and products, and groups valid rows into receipts. Pure logic: the database lookups it needs are
- * passed in, so it can be tested without Spring.
+ * Checks the data rows of a sales import, already in {@link #COLUMNS} order (see {@link ColumnMapping}),
+ * against the CSV rules and the current business's stores and products, and groups valid rows into
+ * receipts. Errors name the field; the service adds the file's own column. Pure logic: the database
+ * lookups it needs are passed in, so it can be tested without Spring.
  */
 final class ImportValidator {
 
@@ -145,7 +146,7 @@ final class ImportValidator {
         }
 
         errors.sort(Comparator.comparing(ImportError::line, Comparator.nullsFirst(Comparator.naturalOrder()))
-                .thenComparing(e -> e.column() == null ? -1 : COLUMNS.indexOf(e.column())));
+                .thenComparing(e -> e.field() == null ? -1 : COLUMNS.indexOf(e.field())));
         return new Validation(rows.size(), receipts, errors);
     }
 

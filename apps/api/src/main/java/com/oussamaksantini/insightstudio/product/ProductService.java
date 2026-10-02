@@ -24,7 +24,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
 import java.util.function.Supplier;
-import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -33,10 +32,6 @@ import org.springframework.util.StringUtils;
 @Service
 @Transactional(readOnly = true)
 public class ProductService {
-
-    /** SKUs are matched exactly by CSV imports, so they are kept simple. */
-    static final Pattern SKU = Pattern.compile("^[A-Za-z0-9][A-Za-z0-9._-]{0,49}$");
-    static final BigDecimal MAX_PRICE = new BigDecimal("9999999999.99");
 
     private final ReportingContext reporting;
     private final ProductRepository products;
@@ -130,32 +125,14 @@ public class ProductService {
     @Transactional
     public ProductInfo create(String sku, String name, String category, BigDecimal listPrice) {
         Business business = reporting.currentBusiness(Role.ADMIN);
-        String cleanSku = sku == null ? "" : sku.strip();
-        if (!SKU.matcher(cleanSku).matches()) {
-            throw ApiException.badRequest(
-                    "'sku' must be 1 to 50 letters, digits, '.', '_' or '-', starting with a letter or digit.");
-        }
-        String cleanName = text(name, "name", 200);
-        String cleanCategory = text(category, "category", 100);
-        if (listPrice == null || listPrice.signum() < 0 || listPrice.compareTo(MAX_PRICE) > 0
-                || listPrice.stripTrailingZeros().scale() > 2) {
-            throw ApiException.badRequest("'listPrice' must be a price of 0 or more with at most 2 decimals.");
-        }
-        BigDecimal price = listPrice.setScale(2);
+        // The same rules as the products CSV import (ProductFields).
+        String cleanSku = ProductFields.sku(sku);
+        String cleanName = ProductFields.name(name);
+        String cleanCategory = ProductFields.category(category);
+        BigDecimal price = ProductFields.listPrice(listPrice, "listPrice");
         long id = queries.insertProduct(business.getId(), cleanSku, cleanName, cleanCategory, price)
                 .orElseThrow(() -> ApiException.conflict("A product with SKU '%s' already exists.".formatted(cleanSku)));
         return new ProductInfo(id, cleanSku, cleanName, cleanCategory, price);
-    }
-
-    private static String text(String value, String field, int maxLength) {
-        String clean = value == null ? "" : value.strip();
-        if (clean.isEmpty()) {
-            throw ApiException.badRequest("'%s' is required.".formatted(field));
-        }
-        if (clean.length() > maxLength || clean.chars().anyMatch(Character::isISOControl)) {
-            throw ApiException.badRequest("'%s' must be at most %d characters of text.".formatted(field, maxLength));
-        }
-        return clean;
     }
 
     private Product findProduct(long productId, long businessId) {

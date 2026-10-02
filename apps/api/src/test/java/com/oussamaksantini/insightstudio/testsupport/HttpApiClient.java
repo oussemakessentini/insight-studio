@@ -87,7 +87,17 @@ public final class HttpApiClient implements AutoCloseable {
     }
 
     public static byte[] multipartFile(String boundary, String fileName, byte[] content) {
-        byte[] head = ("--" + boundary + "\r\nContent-Disposition: form-data; name=\"file\"; filename=\"" + fileName
+        return multipartFile(boundary, fileName, content, new String[0]);
+    }
+
+    /** A multipart body with plain form fields given as name, value pairs (e.g. an import's mapping), then the file. */
+    public static byte[] multipartFile(String boundary, String fileName, byte[] content, String... fields) {
+        StringBuilder parts = new StringBuilder();
+        for (int i = 0; i < fields.length; i += 2) {
+            parts.append("--").append(boundary).append("\r\nContent-Disposition: form-data; name=\"").append(fields[i])
+                    .append("\"\r\n\r\n").append(fields[i + 1]).append("\r\n");
+        }
+        byte[] head = (parts + "--" + boundary + "\r\nContent-Disposition: form-data; name=\"file\"; filename=\"" + fileName
                 + "\"\r\nContent-Type: text/csv\r\n\r\n").getBytes(java.nio.charset.StandardCharsets.UTF_8);
         byte[] tail = ("\r\n--" + boundary + "--\r\n").getBytes(java.nio.charset.StandardCharsets.UTF_8);
         byte[] body = new byte[head.length + content.length + tail.length];

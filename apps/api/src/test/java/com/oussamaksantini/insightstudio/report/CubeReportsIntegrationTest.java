@@ -318,6 +318,44 @@ class CubeReportsIntegrationTest {
 
     @Test
     @Order(5)
+    void productsAndSalesImportedThroughTheApiAreInTheNextReport() throws Exception {
+        Window window = new Window("all data", DATA_FROM.toString(), DATA_TO.toString());
+        String boundary = "cube-catalog-boundary";
+        // A products file with its own headers, mapped to the import's fields: a new SKU in a new category.
+        String products = "Code,Product,Group,Price\nKO-DHOTI,Dhoti,Dhotis,899.00\n";
+        HttpResponse<String> imported = kolkata.cube().postMultipart("/api/imports/products?dryRun=false", boundary,
+                HttpApiClient.multipartFile(boundary, "products.csv", products.getBytes(StandardCharsets.UTF_8),
+                        "mapping", "{\"sku\": \"Code\", \"name\": \"Product\", \"category\": \"Group\", \"list_price\": \"Price\"}"));
+        assertThat(imported.statusCode()).as(imported.body()).isEqualTo(200);
+        assertThat((String) JsonPath.read(imported.body(), "$.status")).isEqualTo("IMPORTED");
+        assertThat((Integer) JsonPath.read(imported.body(), "$.created")).isEqualTo(1);
+
+        // Immediately: the new category is in the report, without sales yet.
+        String body = freshReport(kolkata.cube(), "/api/reports/categories" + window.query(null));
+        assertThat(JsonPath.<List<Integer>>read(body, "$.rows[?(@.category == 'Dhotis')].orders")).containsExactly(0);
+        assertThat(body).isEqualTo(kolkata.sql().get("/api/reports/categories" + window.query(null)).body());
+
+        String sales = String.join("\n",
+                "store_code,receipt_number,sold_at,sku,quantity,unit_price",
+                "KO1,IMP-DHOTI-1,2026-08-15T10:00:00,KO-DHOTI,2,850.00",
+                "KO2,IMP-DHOTI-2,2026-12-31T23:59:00,KO-DHOTI,1,899.00",
+                "");
+        imported = kolkata.cube().postMultipart("/api/imports/sales?dryRun=false", boundary,
+                HttpApiClient.multipartFile(boundary, "dhoti-sales.csv", sales.getBytes(StandardCharsets.UTF_8)));
+        assertThat(imported.statusCode()).as(imported.body()).isEqualTo(200);
+        assertThat((String) JsonPath.read(imported.body(), "$.status")).isEqualTo("IMPORTED");
+
+        // The very next report has the imported sales in the new category, as both engines and the SQL compute it.
+        body = freshReport(kolkata.cube(), "/api/reports/categories" + window.query(null));
+        assertThat(JsonPath.<List<Double>>read(body, "$.rows[?(@.category == 'Dhotis')].revenue")).containsExactly(2599.0);
+        SoftAssertions softly = new SoftAssertions();
+        checkAgainstIndependentSql(softly, kolkata, window.from(), window.to(), null, "categories", body);
+        softly.assertAll();
+        assertThat(body).isEqualTo(kolkata.sql().get("/api/reports/categories" + window.query(null)).body());
+    }
+
+    @Test
+    @Order(5)
     void crossBusinessSaleItemsAreRejectedAndBothEnginesStayConsistent() throws Exception {
         long newYorkSale = jdbc.queryForObject("SELECT MIN(id) FROM sales WHERE business_id = ?", Long.class, newYork.id());
         long parisProduct = jdbc.queryForObject("SELECT MIN(id) FROM products WHERE business_id = ?", Long.class, paris.id());

@@ -21,7 +21,6 @@ import com.oussamaksantini.insightstudio.tenancy.Role;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
-import java.util.regex.Pattern;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -35,9 +34,6 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @Transactional(readOnly = true)
 public class StoreService {
-
-    /** Store codes are matched exactly by CSV imports, so they are kept simple. */
-    static final Pattern CODE = Pattern.compile("^[A-Za-z0-9][A-Za-z0-9._-]{0,49}$");
 
     private final ReportingContext reporting;
     private final StoreRepository stores;
@@ -117,29 +113,12 @@ public class StoreService {
     @Transactional
     public StoreInfo create(String code, String name, String city) {
         Business business = reporting.currentBusiness(Role.ADMIN);
-        String cleanCode = code == null ? "" : code.strip();
-        if (!CODE.matcher(cleanCode).matches()) {
-            throw ApiException.badRequest(
-                    "'code' must be 1 to 50 letters, digits, '.', '_' or '-', starting with a letter or digit.");
-        }
-        String cleanName = text(name, "name", 200, true);
-        String cleanCity = text(city, "city", 100, false);
+        // The same rules as the stores CSV import (StoreFields).
+        String cleanCode = StoreFields.code(code);
+        String cleanName = StoreFields.name(name);
+        String cleanCity = StoreFields.city(city);
         long id = queries.insertStore(business.getId(), cleanCode, cleanName, cleanCity)
                 .orElseThrow(() -> ApiException.conflict("A store with code '%s' already exists.".formatted(cleanCode)));
         return new StoreInfo(id, cleanCode, cleanName, cleanCity);
-    }
-
-    private static String text(String value, String field, int maxLength, boolean required) {
-        String clean = value == null ? "" : value.strip();
-        if (clean.isEmpty()) {
-            if (required) {
-                throw ApiException.badRequest("'%s' is required.".formatted(field));
-            }
-            return null;
-        }
-        if (clean.length() > maxLength || clean.chars().anyMatch(Character::isISOControl)) {
-            throw ApiException.badRequest("'%s' must be at most %d characters of text.".formatted(field, maxLength));
-        }
-        return clean;
     }
 }
