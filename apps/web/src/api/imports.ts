@@ -123,8 +123,6 @@ export const IMPORT_LIMITS = {
   maxReportedErrors: 100,
 }
 
-export const IMPORT_COLUMNS = ['store_code', 'receipt_number', 'sold_at', 'sku', 'quantity', 'unit_price'] as const
-
 /** The multipart body shared by imports and their errors CSV. */
 function importForm(file: File, { mapping, mode }: ImportOptions, dryRun?: boolean): FormData {
   const form = new FormData()
@@ -159,8 +157,6 @@ export const importsApi = {
 
   list: (page: number, size: number, kind: ImportKind | null, signal?: AbortSignal) =>
     getJson<ImportListResponse>('/api/imports', { page, size, kind }, signal),
-
-  upload: (file: File, dryRun: boolean, signal?: AbortSignal) => importsApi.run('sales', file, {}, dryRun, signal),
 
   detail: (batchId: number, signal?: AbortSignal) => getJson<ImportDetail>(`/api/imports/${batchId}`, {}, signal),
 }
