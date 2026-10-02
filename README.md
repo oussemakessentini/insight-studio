@@ -9,7 +9,8 @@ dates. Date-range and store filters apply across every page.
 
 People sign up, create businesses and invite others by email as owners, admins or viewers.
 Every request sees only the business its signed-in user is a member of; owners and admins can set
-up stores and products and import historical sales from CSV. An optional, private Cube semantic
+up stores and products and import stores, products and historical sales from CSV files, with any
+column names (mapped on screen). An optional, private Cube semantic
 layer serves the same figures behind the API, and a read-only public demo can be switched on.
 
 The bundled demo business, **Fieldstone Apparel Co.**, and all of its stores, products and sales
@@ -40,7 +41,7 @@ Browser ──> Vite dev server (:5173) ──/api proxy──> Spring Boot API 
 | `products` | Catalogue with SKU, category and **current** list price |
 | `sales` | One receipt: store, receipt number, `sold_at` timestamp |
 | `sale_items` | Product, quantity and the **unit price actually charged** |
-| `import_batches` | CSV imports (V3): file name, content hash (unique per business), counts and total; imported sales point to their batch through `sales.import_batch_id` |
+| `import_batches` | CSV import history (V3, V13): type (sales, stores, products), mode, outcome (imported or rejected), counts, who imported, content hash (one imported file per business and type); imported sales point to their batch through `sales.import_batch_id` |
 | `users`, `business_memberships` | Accounts (V4): email, bcrypt hash, session version; one role (OWNER, ADMIN, VIEWER) per user and business |
 | `password_reset_tokens` | Recovery (V4): SHA-256 of a single-use token, 30-minute expiry |
 | `spring_session`, `spring_session_attributes` | Sessions (V5), shared by every API instance and kept across restarts |
@@ -95,7 +96,7 @@ a product's list price changes. Days, weeks and months are bucketed in the busin
 | `/stores/{id}` | Store: metrics vs the previous period, revenue trend, category mix and top products. Store pages ignore the global store filter |
 | `/reports` | Monthly and Categories reports (tab kept in the URL) with totals rows that equal the dashboard, partial months marked, CSV and PDF export, and "Save report" (owners and admins) |
 | `/reports/saved`, `/reports/saved/{id}` | Saved reports: run, export (CSV, PDF) for every member; rename, edit and delete for owners and admins |
-| `/imports`, `/imports/{id}` | CSV import (owners and admins): validate (dry run) with a line-by-line error table, import, and history |
+| `/imports`, `/imports/{id}` | CSV import of sales, stores or products (owners and admins): templates, column mapping with a preview, validation (dry run) with an error table and errors CSV, create-only or create-and-update for stores and products, import, and a history of every attempt with its type and outcome |
 | `/sign-in`, `/sign-up`, `/forgot-password`, `/reset-password`, `/verify-email` | Accounts, recovery and email verification |
 | `/businesses/new` | Create a business (shown after sign-up when you have none); the sidebar switches between your businesses |
 | `/settings/catalog` | Add stores and products (owners and admins) |
@@ -186,9 +187,10 @@ are never written to the API log. Account settings:
 For deployments (the `prod` profile, HTTPS, reverse proxies, SMTP) see
 [docs/production.md](docs/production.md).
 
-**CSV import** is available to owners and admins of their own business, never to the public demo.
-File format, rules and a sample file: [docs/csv-import.md](docs/csv-import.md) and
-[docs/sample-import.csv](docs/sample-import.csv).
+**CSV import** of stores, products and sales is available to owners and admins of their own
+business, never to the public demo. Download a template from the Import page, or use your own
+column names and match them to the fields there. File format, rules and a sample file:
+[docs/csv-import.md](docs/csv-import.md) and [docs/sample-import.csv](docs/sample-import.csv).
 
 **Optional: Cube analytics** (private; production mode, bound to `127.0.0.1:4000`). Set
 `CUBEJS_API_SECRET` in `infra\.env` (see `infra\.env.example`), then:
@@ -328,11 +330,17 @@ belonging to other businesses return `404`.
 Details: [docs/stores.md](docs/stores.md), [docs/reports.md](docs/reports.md),
 [docs/saved-reports-api.md](docs/saved-reports-api.md), [docs/frontend-saved-reports.md](docs/frontend-saved-reports.md).
 
-**CSV import** (OWNER or ADMIN; viewers get `403`, signed-out visitors `401`): `POST /api/imports`
-(multipart `file`, `dryRun` default `true`) returns `VALIDATED`, `IMPORTED` or `REJECTED` with
-counts, total and line-level errors; `GET /api/imports` and `/api/imports/{id}` list and show
-batches. Imports are all-or-nothing, never overwrite an existing receipt, and reject a file
-already imported into the same business (by content hash). The dashboard context reports what the
+**CSV import** (OWNER or ADMIN with a verified email; viewers get `403`, signed-out visitors `401`),
+for `{kind}` = `sales`, `stores` or `products`: `GET /api/imports/templates/{kind}.csv`;
+`POST /api/imports/{kind}/preview` (columns, first rows, suggested mapping);
+`POST /api/imports/{kind}` (multipart `file`, `mapping`, `mode` `create_only` or `create_or_update`
+for stores and products, `dryRun` default `true`) returns `VALIDATED`, `IMPORTED` or `REJECTED`
+with counts (created, updated, unchanged, category changes) and errors naming the line, field and
+file column; `POST /api/imports/{kind}/errors.csv` returns every rejected row with its errors;
+`GET /api/imports?kind=` and `/api/imports/{id}` show the history. Imports are all-or-nothing and
+serialised per business, never change a receipt or a price charged (updating a product's list
+price leaves historical revenue as it was), and reject a file already imported into the same
+business as the same type. `POST /api/imports` still imports sales as before. The dashboard context reports what the
 caller may do in `access` (`role`, `canImport`, `canManageCatalog`, `canManageMembers`,
 `readOnly`). See [docs/csv-import.md](docs/csv-import.md).
 
@@ -374,6 +382,12 @@ running. They do not touch your local database. The tests cover:
 - CSV import: parser edge cases, every validation rule, business-scoped duplicate receipts and
   file hashes, dry runs and rejected files write nothing, atomic writes, and dashboard and Sales
   figures moving by exactly the imported totals
+- stores and products imports: templates, preview and suggested mapping, mapping errors, both modes
+  (existing keys refused or updated, unchanged rows counted), list-price updates leaving historical
+  revenue unchanged, category changes moving past sales, rollback on errors and on a failure while
+  writing (recorded as rejected), duplicate files, concurrent imports of the same SKU, error CSVs
+  protected against formulas, another business's keys and history out of reach, and imported
+  products and sales visible in the very next Cube report
 - accounts: sign-up, sign-in, sign-out, rate limits, password change and recovery (single-use,
   expiring tokens that end existing sessions), CSRF and session fixation
 - roles: every endpoint against OWNER, ADMIN, VIEWER, the public demo and signed-out callers,
@@ -424,7 +438,8 @@ running. They do not touch your local database. The tests cover:
   proxy handling and a `prod` profile that requires HTTPS settings
 - Email verification, sign-up that never reveals existing accounts, and a persistent mail outbox
   with bounded retries
-- CSV import for owners and admins of their own business (never the public demo)
+- CSV import of sales, stores and products with column mapping, templates, error CSVs and a history
+  of every attempt, for owners and admins of their own business (never the public demo)
 - Private Cube analytics behind the API, scoped to the member's business
 - Reports computed by Cube (selectable; SQL kept during the migration) with verified freshness
 
