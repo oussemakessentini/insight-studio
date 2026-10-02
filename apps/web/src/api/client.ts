@@ -144,7 +144,25 @@ export function deleteJson<T = void>(path: string, options: RequestOptions = {})
  * can't, then hands it to the browser as a download.
  */
 export async function downloadFile(path: string, fallbackName: string, signal?: AbortSignal): Promise<void> {
-  const response = await send(path, 'GET', undefined, { signal }, '*/*')
+  await saveDownload(await send(path, 'GET', undefined, { signal }, '*/*'), fallbackName)
+}
+
+/**
+ * POSTs multipart form data and saves the answer as a file, for downloads computed from an upload
+ * (e.g. the rejected rows of an import file). Errors are {@link ApiError}s as for JSON calls.
+ */
+export async function downloadForm(
+  path: string,
+  form: FormData,
+  fallbackName: string,
+  params: Params = {},
+  signal?: AbortSignal,
+): Promise<void> {
+  await saveDownload(await send(withQuery(path, params), 'POST', form, { signal }, '*/*'), fallbackName)
+}
+
+/** Saves a response body under its Content-Disposition file name (or `fallbackName`). */
+async function saveDownload(response: Response, fallbackName: string): Promise<void> {
   const blob = await response.blob()
   const disposition = response.headers.get('Content-Disposition') ?? ''
   const name = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(disposition)?.[1]

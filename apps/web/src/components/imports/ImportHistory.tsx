@@ -20,7 +20,7 @@ interface ImportHistoryProps {
 
 /** Successful imports of the current business, newest first. */
 export function ImportHistory({ page, onPage, refreshKey, currency, timeZone, batchHref }: ImportHistoryProps) {
-  const list = useApi(`import-list|${page}|${refreshKey}`, (signal) => importsApi.list(page, HISTORY_PAGE_SIZE, signal))
+  const list = useApi(`import-list|${page}|${refreshKey}`, (signal) => importsApi.list(page, HISTORY_PAGE_SIZE, null, signal))
 
   return (
     <Panel
