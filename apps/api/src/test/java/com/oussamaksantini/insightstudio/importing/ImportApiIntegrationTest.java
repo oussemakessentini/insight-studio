@@ -124,8 +124,17 @@ class ImportApiIntegrationTest extends PostgresIntegrationTest {
         return jdbc.queryForObject("SELECT COUNT(*) FROM " + table, Long.class);
     }
 
+    /** Batches that wrote data; a rejected attempt is recorded in the history too, but writes nothing else. */
+    private long imported() {
+        return jdbc.queryForObject("SELECT COUNT(*) FROM import_batches WHERE status = 'IMPORTED'", Long.class);
+    }
+
+    private long rejected() {
+        return jdbc.queryForObject("SELECT COUNT(*) FROM import_batches WHERE status = 'REJECTED'", Long.class);
+    }
+
     private Map<String, Long> tableCounts() {
-        return Map.of("sales", count("sales"), "sale_items", count("sale_items"), "import_batches", count("import_batches"));
+        return Map.of("sales", count("sales"), "sale_items", count("sale_items"), "imported batches", imported());
     }
 
     private record Totals(BigDecimal revenue, long orders, long units, long salesListed) {
@@ -259,6 +268,10 @@ class ImportApiIntegrationTest extends PostgresIntegrationTest {
                 .andExpect(jsonPath("$.errors[5].message").value(containsString("R-EXIST already exists")));
 
         assertThat(tableCounts()).isEqualTo(before);
+        assertThat(jdbc.queryForMap("SELECT kind, mode, status, file_name, row_count, error_count, sale_count FROM import_batches"))
+                .containsEntry("kind", "sales").containsEntry("mode", "create_only").containsEntry("status", "REJECTED")
+                .containsEntry("file_name", "with-errors.csv").containsEntry("row_count", 5)
+                .containsEntry("error_count", 6).containsEntry("sale_count", 0);
     }
 
     @Test
@@ -276,7 +289,7 @@ class ImportApiIntegrationTest extends PostgresIntegrationTest {
                 .andExpect(jsonPath("$.status").value("REJECTED"))
                 .andExpect(jsonPath("$.errors[0].line").value(3))
                 .andExpect(jsonPath("$.errors[0].column").value("sku"));
-        assertThat(count("import_batches")).isZero();
+        assertThat(imported()).isZero();
     }
 
     @Test
@@ -292,10 +305,12 @@ class ImportApiIntegrationTest extends PostgresIntegrationTest {
                     .andExpect(jsonPath("$.errors", hasSize(1)))
                     .andExpect(jsonPath("$.errors[0].line").value(nullValue()))
                     .andExpect(jsonPath("$.errors[0].column").value(nullValue()))
-                    .andExpect(jsonPath("$.errors[0].message").value(containsString("already been imported")));
+                    .andExpect(jsonPath("$.errors[0].message").value(containsString("already imported")));
         }
         assertThat(count("sales")).isEqualTo(sales);
-        assertThat(count("import_batches")).isEqualTo(1);
+        assertThat(imported()).isEqualTo(1);
+        // The real attempt is in the history as rejected; the dry run is not.
+        assertThat(rejected()).isEqualTo(1);
     }
 
     @Test
@@ -340,7 +355,7 @@ class ImportApiIntegrationTest extends PostgresIntegrationTest {
                 .andExpect(jsonPath("$.status").value("REJECTED"))
                 .andExpect(jsonPath("$.errors[0].line").value(ImportService.MAX_ROWS + 2))
                 .andExpect(jsonPath("$.errors[0].message").value(containsString("more than 50,000")));
-        assertThat(count("import_batches")).isZero();
+        assertThat(imported()).isZero();
     }
 
     @Test
@@ -390,8 +405,17 @@ class ImportApiIntegrationTest extends PostgresIntegrationTest {
         jdbc.execute("CREATE TRIGGER test_fail BEFORE INSERT ON sale_items FOR EACH ROW EXECUTE FUNCTION test_fail_on_price()");
         try {
             Map<String, Long> before = tableCounts();
-            upload("valid-sales.csv", resource("valid-sales.csv"), false).andExpect(status().isInternalServerError());
+            upload("valid-sales.csv", resource("valid-sales.csv"), false)
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.status").value("REJECTED"))
+                    .andExpect(jsonPath("$.batchId").value(nullValue()))
+                    .andExpect(jsonPath("$.errors[0].line").value(nullValue()))
+                    .andExpect(jsonPath("$.errors[0].message").value(ImportService.IMPORT_FAILED));
             assertThat(tableCounts()).isEqualTo(before);
+            // The attempt is in the history, written after the rollback, without any of its data.
+            assertThat(jdbc.queryForMap("SELECT kind, status, error_count, sale_count FROM import_batches"))
+                    .containsEntry("kind", "sales").containsEntry("status", "REJECTED")
+                    .containsEntry("error_count", 1).containsEntry("sale_count", 0);
         } finally {
             jdbc.execute("DROP TRIGGER test_fail ON sale_items");
             jdbc.execute("DROP FUNCTION test_fail_on_price()");

@@ -1,5 +1,9 @@
 package com.oussamaksantini.insightstudio.importing;
 
+import com.oussamaksantini.insightstudio.importing.CatalogValidator.ExistingProduct;
+import com.oussamaksantini.insightstudio.importing.CatalogValidator.ExistingStore;
+import com.oussamaksantini.insightstudio.importing.CatalogValidator.ProductRow;
+import com.oussamaksantini.insightstudio.importing.CatalogValidator.StoreRow;
 import com.oussamaksantini.insightstudio.importing.ImportValidator.PlannedLine;
 import com.oussamaksantini.insightstudio.importing.ImportValidator.PlannedReceipt;
 import com.oussamaksantini.insightstudio.importing.ImportValidator.ReceiptKey;
@@ -20,13 +24,14 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import org.springframework.jdbc.core.ConnectionCallback;
+import org.springframework.jdbc.core.ResultSetExtractor;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 /**
  * Import lookups and writes, all scoped to one business. Writes use plain JDBC (the JPA entities
- * don't map {@code sales.import_batch_id}).
+ * don't map {@code sales.import_batch_id}) with set-based statements over arrays.
  */
 @Repository
 class ImportQueries {
@@ -36,20 +41,36 @@ class ImportQueries {
     /** Receipt keys per lookup query, well below PostgreSQL's bind-parameter limit. */
     private static final int LOOKUP_CHUNK = 2000;
 
+    /** The history columns shared by the list and the detail. */
+    private static final String BATCH_COLUMNS = """
+            b.id, b.kind, b.mode, b.status, b.file_name, b.row_count, b.sale_count, b.line_count, b.total_amount,
+            b.created_count, b.updated_count, b.unchanged_count, b.error_count, u.display_name AS imported_by, b.created_at
+            """;
+
     private final NamedParameterJdbcTemplate jdbc;
 
     ImportQueries(NamedParameterJdbcTemplate jdbc) {
         this.jdbc = jdbc;
     }
 
-    /** Summary values stored with a batch. */
-    record NewBatch(long businessId, String fileName, String contentSha256, int rowCount, int saleCount,
-            int lineCount, BigDecimal totalAmount) {
+    /**
+     * A row of {@code import_batches}: an imported file with its counts, or a rejected attempt with
+     * its error count (and zero counts otherwise).
+     *
+     * @param createdBy the member who uploaded the file, or {@code null}
+     */
+    record NewBatch(long businessId, ImportKind kind, ImportMode mode, ImportStatus status, String fileName,
+            String contentSha256, int rowCount, int saleCount, int lineCount, BigDecimal totalAmount, int created,
+            int updated, int unchanged, int errorCount, Long createdBy) {
     }
 
-    /** Serialises imports into one business until the current transaction ends. */
-    void lockBusiness(long businessId) {
-        jdbc.queryForObject("SELECT id FROM businesses WHERE id = :id FOR UPDATE", Map.of("id", businessId), Long.class);
+    /**
+     * Serialises imports into one business until the current transaction ends (a transaction-scoped
+     * advisory lock: other businesses' imports and other writes to the business are not blocked).
+     */
+    void lockImports(long businessId) {
+        jdbc.query("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))", Map.of("key", "import:" + businessId),
+                (ResultSetExtractor<Void>) rs -> null);
     }
 
     Map<String, Long> storeIdsByCode(long businessId) {
@@ -68,6 +89,26 @@ class ImportQueries {
                     ids.put(rs.getString("sku"), rs.getLong("id"));
                 });
         return ids;
+    }
+
+    Map<String, ExistingStore> storesByCode(long businessId) {
+        Map<String, ExistingStore> stores = new HashMap<>();
+        jdbc.query("SELECT id, code, name, city FROM stores WHERE business_id = :businessId",
+                Map.of("businessId", businessId), rs -> {
+                    stores.put(rs.getString("code"), new ExistingStore(
+                            rs.getLong("id"), rs.getString("code"), rs.getString("name"), rs.getString("city")));
+                });
+        return stores;
+    }
+
+    Map<String, ExistingProduct> productsBySku(long businessId) {
+        Map<String, ExistingProduct> products = new HashMap<>();
+        jdbc.query("SELECT id, sku, name, category, list_price FROM products WHERE business_id = :businessId",
+                Map.of("businessId", businessId), rs -> {
+                    products.put(rs.getString("sku"), new ExistingProduct(rs.getLong("id"), rs.getString("sku"),
+                            rs.getString("name"), rs.getString("category"), rs.getBigDecimal("list_price")));
+                });
+        return products;
     }
 
     /** Which of {@code keys} already exist. Store ids come from this business, so the check is business-scoped. */
@@ -96,31 +137,51 @@ class ImportQueries {
         return existing;
     }
 
-    boolean hashExists(long businessId, String contentSha256) {
-        Boolean exists = jdbc.queryForObject(
-                "SELECT EXISTS (SELECT 1 FROM import_batches WHERE business_id = :businessId AND content_sha256 = :sha)",
-                Map.of("businessId", businessId, "sha", contentSha256), Boolean.class);
-        return Boolean.TRUE.equals(exists);
+    /** When a file with this content was first imported as {@code kind} into the business, if ever (rejected attempts don't count). */
+    Optional<Instant> importedAt(long businessId, ImportKind kind, String contentSha256) {
+        String sql = """
+                SELECT MIN(created_at) AS imported_at
+                FROM import_batches
+                WHERE business_id = :businessId AND kind = :kind AND content_sha256 = :sha AND status = 'IMPORTED'
+                """;
+        MapSqlParameterSource params = new MapSqlParameterSource()
+                .addValue("businessId", businessId)
+                .addValue("kind", kind.param())
+                .addValue("sha", contentSha256);
+        return Optional.ofNullable(jdbc.queryForObject(sql, params, (rs, i) -> instant(rs, "imported_at")));
     }
 
-    /** Inserts the batch, its receipts and their line items. Must run inside a transaction. */
-    long insertBatch(NewBatch batch, List<PlannedReceipt> receipts) {
-        long batchId = jdbc.queryForObject("""
+    /** Inserts a history row and returns its id. */
+    long insertBatch(NewBatch batch) {
+        return jdbc.queryForObject("""
                 INSERT INTO import_batches
-                    (business_id, file_name, content_sha256, status, row_count, sale_count, line_count, total_amount)
-                VALUES (:businessId, :fileName, :sha, 'IMPORTED', :rowCount, :saleCount, :lineCount, :totalAmount)
+                    (business_id, kind, mode, status, file_name, content_sha256, row_count, sale_count, line_count,
+                     total_amount, created_count, updated_count, unchanged_count, error_count, created_by)
+                VALUES (:businessId, :kind, :mode, :status, :fileName, :sha, :rowCount, :saleCount, :lineCount,
+                        :totalAmount, :created, :updated, :unchanged, :errorCount, :createdBy)
                 RETURNING id
                 """,
                 new MapSqlParameterSource()
                         .addValue("businessId", batch.businessId())
+                        .addValue("kind", batch.kind().param())
+                        .addValue("mode", batch.mode().param())
+                        .addValue("status", batch.status().name())
                         .addValue("fileName", batch.fileName())
                         .addValue("sha", batch.contentSha256())
                         .addValue("rowCount", batch.rowCount())
                         .addValue("saleCount", batch.saleCount())
                         .addValue("lineCount", batch.lineCount())
-                        .addValue("totalAmount", batch.totalAmount()),
+                        .addValue("totalAmount", batch.totalAmount())
+                        .addValue("created", batch.created())
+                        .addValue("updated", batch.updated())
+                        .addValue("unchanged", batch.unchanged())
+                        .addValue("errorCount", batch.errorCount())
+                        .addValue("createdBy", batch.createdBy()),
                 Long.class);
+    }
 
+    /** Inserts receipts and their line items for a batch. Must run inside a transaction. */
+    void insertReceipts(long batchId, List<PlannedReceipt> receipts) {
         Map<ReceiptKey, Long> saleIds = new HashMap<>();
         for (int from = 0; from < receipts.size(); from += CHUNK_SIZE) {
             saleIds.putAll(insertSales(batchId, receipts.subList(from, Math.min(from + CHUNK_SIZE, receipts.size()))));
@@ -136,51 +197,171 @@ class ImportQueries {
         for (int from = 0; from < items.size(); from += CHUNK_SIZE) {
             insertItems(items.subList(from, Math.min(from + CHUNK_SIZE, items.size())));
         }
-        return batchId;
     }
 
-    long countBatches(long businessId) {
-        return jdbc.queryForObject("SELECT COUNT(*) FROM import_batches WHERE business_id = :businessId",
-                Map.of("businessId", businessId), Long.class);
-    }
-
-    List<ImportBatchSummary> pageBatches(long businessId, int limit, long offset) {
+    /**
+     * Creates stores. A code taken meanwhile violates {@code uq_stores_business_code}, which rolls
+     * the import back.
+     */
+    void insertStores(long businessId, List<StoreRow> stores) {
+        if (stores.isEmpty()) {
+            return;
+        }
         String sql = """
-                SELECT id, file_name, row_count, sale_count, line_count, total_amount, created_at
-                FROM import_batches
-                WHERE business_id = :businessId
-                ORDER BY created_at DESC, id DESC
+                INSERT INTO stores (business_id, code, name, city)
+                SELECT ?, u.code, u.name, u.city
+                FROM unnest(?, ?, ?) AS u(code, name, city)
+                """;
+        jdbc.getJdbcTemplate().execute((ConnectionCallback<Integer>) con -> {
+            try (PreparedStatement ps = con.prepareStatement(sql)) {
+                ps.setLong(1, businessId);
+                ps.setArray(2, con.createArrayOf("varchar", stores.stream().map(StoreRow::code).toArray()));
+                ps.setArray(3, con.createArrayOf("varchar", stores.stream().map(StoreRow::name).toArray()));
+                ps.setArray(4, con.createArrayOf("varchar", stores.stream().map(StoreRow::city).toArray()));
+                return ps.executeUpdate();
+            }
+        });
+    }
+
+    /** Sets the name and city of existing stores of the business; nothing else of theirs changes. */
+    void updateStores(long businessId, List<StoreRow> stores) {
+        if (stores.isEmpty()) {
+            return;
+        }
+        String sql = """
+                UPDATE stores s
+                SET name = u.name, city = u.city
+                FROM unnest(?, ?, ?) AS u(id, name, city)
+                WHERE s.id = u.id AND s.business_id = ?
+                """;
+        jdbc.getJdbcTemplate().execute((ConnectionCallback<Integer>) con -> {
+            try (PreparedStatement ps = con.prepareStatement(sql)) {
+                ps.setArray(1, con.createArrayOf("int8", stores.stream().map(StoreRow::id).toArray()));
+                ps.setArray(2, con.createArrayOf("varchar", stores.stream().map(StoreRow::name).toArray()));
+                ps.setArray(3, con.createArrayOf("varchar", stores.stream().map(StoreRow::city).toArray()));
+                ps.setLong(4, businessId);
+                return ps.executeUpdate();
+            }
+        });
+    }
+
+    /**
+     * Creates products. A SKU taken meanwhile violates {@code uq_products_business_sku}, which rolls
+     * the import back.
+     */
+    void insertProducts(long businessId, List<ProductRow> products) {
+        if (products.isEmpty()) {
+            return;
+        }
+        String sql = """
+                INSERT INTO products (business_id, sku, name, category, list_price)
+                SELECT ?, u.sku, u.name, u.category, CAST(u.list_price AS NUMERIC(12,2))
+                FROM unnest(?, ?, ?, ?) AS u(sku, name, category, list_price)
+                """;
+        jdbc.getJdbcTemplate().execute((ConnectionCallback<Integer>) con -> {
+            try (PreparedStatement ps = con.prepareStatement(sql)) {
+                ps.setLong(1, businessId);
+                ps.setArray(2, con.createArrayOf("varchar", products.stream().map(ProductRow::sku).toArray()));
+                ps.setArray(3, con.createArrayOf("varchar", products.stream().map(ProductRow::name).toArray()));
+                ps.setArray(4, con.createArrayOf("varchar", products.stream().map(ProductRow::category).toArray()));
+                ps.setArray(5, con.createArrayOf("text", products.stream().map(p -> p.listPrice().toPlainString()).toArray()));
+                return ps.executeUpdate();
+            }
+        });
+    }
+
+    /**
+     * Sets the name, category and list price of existing products of the business. Sale items keep
+     * the price actually charged ({@code sale_items.unit_price}), so past revenue never changes.
+     */
+    void updateProducts(long businessId, List<ProductRow> products) {
+        if (products.isEmpty()) {
+            return;
+        }
+        String sql = """
+                UPDATE products p
+                SET name = u.name, category = u.category, list_price = CAST(u.list_price AS NUMERIC(12,2))
+                FROM unnest(?, ?, ?, ?) AS u(id, name, category, list_price)
+                WHERE p.id = u.id AND p.business_id = ?
+                """;
+        jdbc.getJdbcTemplate().execute((ConnectionCallback<Integer>) con -> {
+            try (PreparedStatement ps = con.prepareStatement(sql)) {
+                ps.setArray(1, con.createArrayOf("int8", products.stream().map(ProductRow::id).toArray()));
+                ps.setArray(2, con.createArrayOf("varchar", products.stream().map(ProductRow::name).toArray()));
+                ps.setArray(3, con.createArrayOf("varchar", products.stream().map(ProductRow::category).toArray()));
+                ps.setArray(4, con.createArrayOf("text", products.stream().map(p -> p.listPrice().toPlainString()).toArray()));
+                ps.setLong(5, businessId);
+                return ps.executeUpdate();
+            }
+        });
+    }
+
+    /** @param kind only this kind, or every kind when {@code null} */
+    long countBatches(long businessId, ImportKind kind) {
+        MapSqlParameterSource params = new MapSqlParameterSource()
+                .addValue("businessId", businessId)
+                .addValue("kind", kind == null ? null : kind.param());
+        return jdbc.queryForObject("""
+                SELECT COUNT(*) FROM import_batches
+                WHERE business_id = :businessId AND (CAST(:kind AS VARCHAR) IS NULL OR kind = :kind)
+                """, params, Long.class);
+    }
+
+    /** @param kind only this kind, or every kind when {@code null} */
+    List<ImportBatchSummary> pageBatches(long businessId, ImportKind kind, int limit, long offset) {
+        String sql = "SELECT " + BATCH_COLUMNS + """
+                FROM import_batches b
+                LEFT JOIN users u ON u.id = b.created_by
+                WHERE b.business_id = :businessId AND (CAST(:kind AS VARCHAR) IS NULL OR b.kind = :kind)
+                ORDER BY b.created_at DESC, b.id DESC
                 LIMIT :limit OFFSET :offset
                 """;
         MapSqlParameterSource params = new MapSqlParameterSource()
                 .addValue("businessId", businessId)
+                .addValue("kind", kind == null ? null : kind.param())
                 .addValue("limit", limit)
                 .addValue("offset", offset);
         return jdbc.query(sql, params, (rs, i) -> new ImportBatchSummary(
                 rs.getLong("id"),
+                kind(rs),
+                ImportMode.fromParam(rs.getString("mode")),
+                ImportStatus.valueOf(rs.getString("status")),
                 rs.getString("file_name"),
                 rs.getInt("row_count"),
                 rs.getInt("sale_count"),
                 rs.getInt("line_count"),
                 rs.getBigDecimal("total_amount"),
+                rs.getInt("created_count"),
+                rs.getInt("updated_count"),
+                rs.getInt("unchanged_count"),
+                rs.getInt("error_count"),
+                rs.getString("imported_by"),
                 instant(rs, "created_at")));
     }
 
     Optional<ImportDetailResponse> detail(long batchId, long businessId) {
-        String sql = """
-                SELECT b.id, b.file_name, b.row_count, b.sale_count, b.line_count, b.total_amount, b.created_at,
-                       (SELECT MIN(s.sold_at) FROM sales s WHERE s.import_batch_id = b.id) AS first_sold_at,
+        String sql = "SELECT " + BATCH_COLUMNS + """
+                       , (SELECT MIN(s.sold_at) FROM sales s WHERE s.import_batch_id = b.id) AS first_sold_at,
                        (SELECT MAX(s.sold_at) FROM sales s WHERE s.import_batch_id = b.id) AS last_sold_at
                 FROM import_batches b
+                LEFT JOIN users u ON u.id = b.created_by
                 WHERE b.id = :batchId AND b.business_id = :businessId
                 """;
         return jdbc.query(sql, Map.of("batchId", batchId, "businessId", businessId), (rs, i) -> new ImportDetailResponse(
                         rs.getLong("id"),
+                        kind(rs),
+                        ImportMode.fromParam(rs.getString("mode")),
+                        ImportStatus.valueOf(rs.getString("status")),
                         rs.getString("file_name"),
                         rs.getInt("row_count"),
                         rs.getInt("sale_count"),
                         rs.getInt("line_count"),
                         rs.getBigDecimal("total_amount"),
+                        rs.getInt("created_count"),
+                        rs.getInt("updated_count"),
+                        rs.getInt("unchanged_count"),
+                        rs.getInt("error_count"),
+                        rs.getString("imported_by"),
                         instant(rs, "created_at"),
                         instant(rs, "first_sold_at"),
                         instant(rs, "last_sold_at")))
@@ -233,6 +414,11 @@ class ImportQueries {
                 return ps.executeUpdate();
             }
         });
+    }
+
+    private static ImportKind kind(ResultSet rs) throws SQLException {
+        String kind = rs.getString("kind");
+        return ImportKind.fromParam(kind).orElseThrow(() -> new IllegalStateException("Unknown import kind " + kind));
     }
 
     private static Instant instant(ResultSet rs, String column) throws SQLException {
