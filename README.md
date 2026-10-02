@@ -203,7 +203,8 @@ the API signs a 60-second token carrying the member's business id, and Cube adds
 filter to every query. Add `REPORTS_ENGINE=cube` to have Cube compute the monthly and category
 reports (saved reports and CSV/PDF exports included) instead of SQL; figures are checked against the
 latest data change, so an import shows up in the next report, and if Cube cannot answer in time the
-API says so (`503`) rather than showing stale numbers. See [docs/cube-reports.md](docs/cube-reports.md). Plain `docker compose up -d` starts only PostgreSQL and Mailpit. Model, security
+API says so (`503`) rather than showing stale numbers. See [docs/cube-reports.md](docs/cube-reports.md).
+`REPORTS_ENGINE=sql` stays the default until a trial passes: [docs/cube-trial.md](docs/cube-trial.md). Plain `docker compose up -d` starts only PostgreSQL and Mailpit. Model, security
 and the reconciliation script: [docs/analytics.md](docs/analytics.md).
 
 ## Demo data
@@ -432,7 +433,8 @@ running. They do not touch your local database. The tests cover:
 - Account deletion and email address changes
 - Business settings UI (rename, time zone)
 - Scheduled report emails (saved reports sent through the mail outbox)
-- Make Cube the default report engine, then retire the SQL report queries
+- Run the Cube trial ([docs/cube-trial.md](docs/cube-trial.md)) on production-like data; if it passes,
+  make Cube the default report engine, then retire the SQL report queries
 - Dashboard panels served from Cube
 - Forecasting in `services/analytics`
 - Per-store breakdown on the product page

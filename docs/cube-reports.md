@@ -219,6 +219,13 @@ when a cube of the model has no scope member. Marker rows carry their business i
 - `analytics/CubeAnswerTest`: parsing those answers.
 - `services/analytics`: `node --test`.
 
+## Trial
+
+Cube is not the default: `REPORTS_ENGINE=sql` stays until a trial passes. The procedure, the script
+(`services/analytics/scripts/cube-trial.mjs`) and the pass criteria for correctness, concurrent
+businesses, imports during reporting, cold starts, response times and 503 recovery are in
+[cube-trial.md](cube-trial.md).
+
 ## Limitations
 
 - A line item whose product belongs to another business than its store cannot exist: Flyway V12
