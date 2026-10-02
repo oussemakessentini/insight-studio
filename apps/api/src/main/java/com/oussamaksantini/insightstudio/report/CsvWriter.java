@@ -13,7 +13,7 @@ import java.util.List;
  * leading single quote. Numbers are written with {@link #number} and never altered, so negative
  * values stay numeric.
  */
-final class CsvWriter {
+public final class CsvWriter {
 
     private static final String LINE_END = "\r\n";
 
@@ -21,36 +21,36 @@ final class CsvWriter {
     private final List<String> row = new ArrayList<>();
 
     /** Adds a text cell from the data (e.g. a category name) with formula-injection protection. */
-    CsvWriter text(String value) {
+    public CsvWriter text(String value) {
         row.add(quote(neutralizeFormula(value == null ? "" : value)));
         return this;
     }
 
     /** Adds a plain number: {@code .} as decimal separator, no grouping or currency; empty for {@code null}. */
-    CsvWriter number(BigDecimal value) {
+    public CsvWriter number(BigDecimal value) {
         row.add(value == null ? "" : value.toPlainString());
         return this;
     }
 
-    CsvWriter number(long value) {
+    public CsvWriter number(long value) {
         row.add(Long.toString(value));
         return this;
     }
 
     /** Adds a trusted literal such as a header name, an ISO date or a boolean. */
-    CsvWriter literal(Object value) {
+    public CsvWriter literal(Object value) {
         row.add(quote(String.valueOf(value)));
         return this;
     }
 
-    CsvWriter header(String... names) {
+    public CsvWriter header(String... names) {
         for (String name : names) {
             literal(name);
         }
         return endRow();
     }
 
-    CsvWriter endRow() {
+    public CsvWriter endRow() {
         out.append(String.join(",", row)).append(LINE_END);
         row.clear();
         return this;
