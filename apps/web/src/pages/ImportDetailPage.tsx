@@ -1,16 +1,21 @@
 import { ApiError } from '../api/client'
 import { importsApi, type ImportDetail } from '../api/imports'
+import { ImportStatusBadge } from '../components/imports/ImportResultView'
+import { KINDS, MODE_LABELS, hasModes } from '../components/imports/kinds'
 import { importedSalesLink } from '../components/imports/salesRange'
 import { Link } from '../components/Link'
 import { PageHeader } from '../components/PageHeader'
 import { AsyncContent, ErrorState, Panel, Skeleton, SkeletonRows } from '../components/Panel'
-import { StatTiles } from '../components/StatTiles'
+import { StatTiles, type StatTile } from '../components/StatTiles'
 import { useApi } from '../hooks/useApi'
 import { formatCurrency, formatDateTimeLong, formatNumber } from '../lib/format'
 import '../styles/imports.css'
 import type { PageProps } from './types'
 
-/** One successful import: what it added and when the imported receipts were sold. */
+/**
+ * One import attempt of any type: what it added or changed, or, for a rejected file, how many
+ * errors stopped it. Sales imports also show when the imported receipts were sold.
+ */
 export function ImportDetailPage({ importId, context, onFiltersChange, href }: PageProps & { importId: number }) {
   const { business } = context
   const batch = useApi(`import|${importId}`, (signal) => importsApi.detail(importId, signal))
@@ -26,13 +31,21 @@ export function ImportDetailPage({ importId, context, onFiltersChange, href }: P
       <PageHeader
         eyebrow={
           <nav aria-label="Breadcrumb" className="breadcrumb">
-            <Link href={href('/imports')}>Import sales</Link>
+            <Link href={href('/imports')}>Import</Link>
             <span aria-hidden="true">/</span>
             <span>Import #{importId}</span>
           </nav>
         }
         title={data ? <span className="imports-title">{data.fileName}</span> : <Skeleton height={30} width={260} />}
-        subtitle={data ? <>Imported {formatDateTimeLong(data.createdAt, business.timeZone)}</> : undefined}
+        subtitle={
+          data ? (
+            <>
+              {KINDS[data.kind].label} · {data.status === 'REJECTED' ? 'Rejected' : 'Imported'}{' '}
+              {formatDateTimeLong(data.createdAt, business.timeZone)}
+              {data.importedBy && <> by {data.importedBy}</>}
+            </>
+          ) : undefined
+        }
       />
 
       {batch.error ? (
@@ -40,14 +53,7 @@ export function ImportDetailPage({ importId, context, onFiltersChange, href }: P
           <ErrorState message={batch.error.message} onRetry={batch.retry} />
         </div>
       ) : data ? (
-        <StatTiles
-          tiles={[
-            { label: 'Total', value: formatCurrency(data.totalAmount, business.currency), caption: 'At the prices charged' },
-            { label: 'Receipts', value: formatNumber(data.saleCount) },
-            { label: 'Line items', value: formatNumber(data.lineCount) },
-            { label: 'Rows', value: formatNumber(data.rowCount), caption: 'In the file, header excluded' },
-          ]}
-        />
+        <StatTiles tiles={tilesFor(data, business.currency)} />
       ) : (
         <div className="metric-grid" aria-busy="true">
           {[0, 1, 2, 3].map((i) => (
@@ -61,26 +67,50 @@ export function ImportDetailPage({ importId, context, onFiltersChange, href }: P
 
       <Panel title="Details">
         <AsyncContent {...batch} skeleton={<SkeletonRows rows={4} />}>
-          {(d) => <Details batch={d} timeZone={business.timeZone} onFiltersChange={onFiltersChange} />}
+          {(d) => <Details batch={d} timeZone={business.timeZone} href={href} onFiltersChange={onFiltersChange} />}
         </AsyncContent>
       </Panel>
     </>
   )
 }
 
+function tilesFor(batch: ImportDetail, currency: string): StatTile[] {
+  const rows: StatTile = { label: 'Rows', value: formatNumber(batch.rowCount), caption: 'In the file, header excluded' }
+  if (batch.status === 'REJECTED') {
+    return [{ label: 'Errors', value: formatNumber(batch.errorCount), caption: 'Nothing was written' }, rows]
+  }
+  if (batch.kind === 'sales') {
+    return [
+      { label: 'Total', value: formatCurrency(batch.totalAmount, currency), caption: 'At the prices charged' },
+      { label: 'Receipts', value: formatNumber(batch.saleCount) },
+      { label: 'Line items', value: formatNumber(batch.lineCount) },
+      rows,
+    ]
+  }
+  const tiles: StatTile[] = [{ label: 'Created', value: formatNumber(batch.created) }]
+  if (batch.mode === 'create_or_update') {
+    tiles.push({ label: 'Updated', value: formatNumber(batch.updated) }, { label: 'Unchanged', value: formatNumber(batch.unchanged) })
+  }
+  tiles.push(rows)
+  return tiles
+}
+
 function Details({
   batch,
   timeZone,
+  href,
   onFiltersChange,
 }: {
   batch: ImportDetail
   timeZone: string
+  href: (path: string) => string
   onFiltersChange: PageProps['onFiltersChange']
 }) {
   const sales =
-    batch.firstSoldAt && batch.lastSoldAt
+    batch.kind === 'sales' && batch.firstSoldAt && batch.lastSoldAt
       ? importedSalesLink(batch.firstSoldAt, batch.lastSoldAt, timeZone, onFiltersChange)
       : null
+  const imported = batch.status === 'IMPORTED'
   return (
     <>
       <dl className="imports-details">
@@ -89,25 +119,63 @@ function Details({
           <dd className="imports-file-name">{batch.fileName}</dd>
         </div>
         <div>
-          <dt>Imported</dt>
+          <dt>Outcome</dt>
+          <dd>
+            <ImportStatusBadge status={batch.status} />
+          </dd>
+        </div>
+        <div>
+          <dt>Type</dt>
+          <dd>{KINDS[batch.kind].label}</dd>
+        </div>
+        {hasModes(batch.kind) && (
+          <div>
+            <dt>Mode</dt>
+            <dd>{MODE_LABELS[batch.mode]}</dd>
+          </div>
+        )}
+        <div>
+          <dt>{imported ? 'Imported' : 'Attempted'}</dt>
           <dd>{formatDateTimeLong(batch.createdAt, timeZone)}</dd>
         </div>
         <div>
-          <dt>First sale</dt>
-          <dd>{batch.firstSoldAt ? formatDateTimeLong(batch.firstSoldAt, timeZone) : '–'}</dd>
+          <dt>By</dt>
+          <dd>{batch.importedBy ?? <span className="text-muted">Unknown</span>}</dd>
         </div>
-        <div>
-          <dt>Last sale</dt>
-          <dd>{batch.lastSoldAt ? formatDateTimeLong(batch.lastSoldAt, timeZone) : '–'}</dd>
-        </div>
+        {batch.kind === 'sales' && imported && (
+          <>
+            <div>
+              <dt>First sale</dt>
+              <dd>{batch.firstSoldAt ? formatDateTimeLong(batch.firstSoldAt, timeZone) : '–'}</dd>
+            </div>
+            <div>
+              <dt>Last sale</dt>
+              <dd>{batch.lastSoldAt ? formatDateTimeLong(batch.lastSoldAt, timeZone) : '–'}</dd>
+            </div>
+          </>
+        )}
       </dl>
-      {sales && (
-        <p className="imports-buttons">
+      {!imported && (
+        <p className="imports-hint imports-details-note">
+          The file had {batch.errorCount === 1 ? 'an error' : 'errors'}, so nothing was written. Errors aren't kept: validate
+          the file again on the Import page to see them and download them as CSV.
+        </p>
+      )}
+      <p className="imports-buttons">
+        {sales ? (
           <Link className="button button-secondary" href={sales.href} onClick={sales.onClick}>
             View sales in this period
           </Link>
-        </p>
-      )}
+        ) : imported && batch.kind !== 'sales' ? (
+          <Link className="button button-secondary" href={href(KINDS[batch.kind].listPath)}>
+            Go to {KINDS[batch.kind].label}
+          </Link>
+        ) : !imported ? (
+          <Link className="button button-secondary" href={href(`/imports${batch.kind === 'sales' ? '' : `?type=${batch.kind}`}`)}>
+            Import {KINDS[batch.kind].label.toLowerCase()} again
+          </Link>
+        ) : null}
+      </p>
     </>
   )
 }

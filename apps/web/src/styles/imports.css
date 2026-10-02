@@ -240,6 +240,249 @@ a.imports-button-primary:hover {
   color: var(--text);
 }
 
+/* ---------- Type choice (step 1) ----------------------------------------- */
+
+.imports-kinds {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.imports-kind,
+.imports-mode {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  cursor: pointer;
+  min-width: 0;
+}
+
+.imports-kind:hover,
+.imports-mode:hover {
+  border-color: var(--navy-300);
+}
+
+.imports-kind.is-selected,
+.imports-mode.is-selected {
+  border-color: var(--blue-600);
+  background: var(--blue-50);
+  box-shadow: inset 0 0 0 1px var(--blue-600);
+}
+
+.imports-kind input,
+.imports-mode input {
+  margin: 3px 0 0;
+  flex: none;
+  accent-color: var(--blue-600);
+}
+
+.imports-kind:has(input:focus-visible),
+.imports-mode:has(input:focus-visible) {
+  outline: 2px solid var(--blue-500);
+  outline-offset: 2px;
+}
+
+fieldset:disabled .imports-kind,
+fieldset:disabled .imports-mode {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.imports-kind-text,
+.imports-mode > span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.imports-kind-label,
+.imports-mode-label {
+  font-weight: 600;
+  color: var(--navy-900);
+}
+
+.imports-kind-description,
+.imports-mode-help {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.imports-template {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  margin-top: 14px;
+}
+
+.imports-download {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  min-width: 0;
+}
+
+.imports-download-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.imports-download-error {
+  font-size: 13px;
+  color: var(--bad-text);
+}
+
+/* ---------- Mapping (step 3) --------------------------------------------- */
+
+.imports-step {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-width: 0;
+}
+
+.imports-subheading {
+  margin: 0 0 8px;
+  padding: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--navy-900);
+}
+
+.imports-preview {
+  min-width: 0;
+}
+
+.imports-preview-scroll:focus-visible {
+  outline: 2px solid var(--blue-500);
+  outline-offset: -2px;
+}
+
+.imports-preview-table th {
+  text-transform: none;
+  letter-spacing: 0;
+  vertical-align: bottom;
+}
+
+.imports-preview-column {
+  display: block;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.imports-preview-field {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  font-weight: 550;
+  color: var(--blue-600);
+}
+
+.imports-preview-field.is-unused {
+  color: var(--text-muted);
+  font-weight: 450;
+}
+
+.imports-preview-cell {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.imports-mapping,
+.imports-modes {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.imports-mapping .imports-hint {
+  margin-bottom: 12px;
+  font-size: 13px;
+}
+
+.imports-required {
+  font-weight: 600;
+  color: var(--navy-800);
+}
+
+.imports-mapping-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 14px 18px;
+}
+
+.imports-mapping-field select.control {
+  width: 100%;
+  min-width: 0;
+}
+
+.imports-modes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.imports-modes legend {
+  grid-column: 1 / -1;
+}
+
+/* ---------- Results (step 4) --------------------------------------------- */
+
+.imports-scroll-target {
+  scroll-margin-top: 16px;
+}
+
+.imports-errors-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+
+.imports-error-column {
+  white-space: nowrap;
+}
+
+.imports-note {
+  padding: 10px 14px;
+  border: 1px solid #f3d9a4;
+  border-radius: var(--radius-sm);
+  background: #fff8e8;
+  color: #6b4a00;
+  font-size: 14px;
+}
+
+/* ---------- History ------------------------------------------------------ */
+
+.imports-history-filter select.control {
+  min-width: 150px;
+}
+
+.imports-history-counts {
+  white-space: nowrap;
+  color: var(--text-secondary);
+}
+
+.imports-details-note {
+  margin-bottom: 16px;
+}
+
 @media (max-width: 640px) {
   .imports-form {
     flex-direction: column;
@@ -265,5 +508,24 @@ a.imports-button-primary:hover {
 
   .imports-error-message {
     min-width: 160px;
+  }
+
+  .imports-kinds,
+  .imports-modes {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .imports-mapping-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .imports-template > .imports-download,
+  .imports-template .imports-download-button {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .imports-history-filter {
+    width: 100%;
   }
 }
