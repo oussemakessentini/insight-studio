@@ -7,6 +7,7 @@ import com.oussamaksantini.insightstudio.common.web.StaleRevisionException;
 import com.oussamaksantini.insightstudio.customdashboard.CustomDashboardQueries.DashboardRow;
 import com.oussamaksantini.insightstudio.customdashboard.CustomDashboardQueries.RevisionRow;
 import com.oussamaksantini.insightstudio.customdashboard.DashboardLayoutValidator.Validated;
+import com.oussamaksantini.insightstudio.customdashboard.dto.DashboardReferenceResponse;
 import com.oussamaksantini.insightstudio.customdashboard.dto.DashboardResponse;
 import com.oussamaksantini.insightstudio.customdashboard.dto.DashboardRevisionResponse;
 import com.oussamaksantini.insightstudio.customdashboard.dto.DashboardSummaryResponse;
@@ -44,6 +45,7 @@ import tools.jackson.databind.json.JsonMapper;
 public class CustomDashboardService {
 
     static final String NOT_FOUND = "Dashboard not found.";
+    static final String CHART_NOT_FOUND = "Chart not found.";
     static final String STALE = "This dashboard was changed by someone else since you opened it. Reload it to see "
             + "the latest version, then make your changes again.";
 
@@ -90,6 +92,15 @@ public class CustomDashboardService {
         return queries.revisions(businessId, id).stream()
                 .map(r -> new DashboardRevisionResponse(r.revision(), r.name(), r.widgetCount(), r.createdBy(), r.createdAt()))
                 .toList();
+    }
+
+    /** The dashboards whose current layout places the chart (warned about before deleting it). */
+    public List<DashboardReferenceResponse> dashboardsUsingChart(long chartId) {
+        long businessId = current.require().businessId();
+        if (!queries.chartExists(businessId, chartId)) {
+            throw ApiException.notFound(CHART_NOT_FOUND);
+        }
+        return queries.dashboardsUsing(businessId, chartId);
     }
 
     // ---------------------------------------------------------------- writes

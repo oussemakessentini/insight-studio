@@ -1,5 +1,6 @@
 package com.oussamaksantini.insightstudio.customdashboard;
 
+import com.oussamaksantini.insightstudio.customdashboard.dto.DashboardReferenceResponse;
 import com.oussamaksantini.insightstudio.customdashboard.dto.DashboardWidgetResponse;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -252,6 +253,24 @@ class CustomDashboardQueries {
                             rs.getString("visualization"), rs.getInt("current_revision")));
                 });
         return charts;
+    }
+
+    boolean chartExists(long businessId, long chartId) {
+        return Boolean.TRUE.equals(jdbc.queryForObject("""
+                SELECT EXISTS (SELECT 1 FROM chart_definitions WHERE business_id = :businessId AND id = :id)
+                """, Map.of("businessId", businessId, "id", chartId), Boolean.class));
+    }
+
+    /** The dashboards of the business whose current layout places the chart, by name ignoring case. */
+    List<DashboardReferenceResponse> dashboardsUsing(long businessId, long chartId) {
+        return jdbc.query("""
+                SELECT d.id, d.name
+                FROM dashboard_chart_refs ref
+                JOIN dashboards d ON d.id = ref.dashboard_id AND d.business_id = ref.business_id
+                WHERE ref.business_id = :businessId AND ref.chart_id = :chartId
+                ORDER BY lower(d.name), d.id
+                """, Map.of("businessId", businessId, "chartId", chartId),
+                (rs, i) -> new DashboardReferenceResponse(rs.getLong("id"), rs.getString("name")));
     }
 
     private static DashboardRow row(ResultSet rs) throws SQLException {
