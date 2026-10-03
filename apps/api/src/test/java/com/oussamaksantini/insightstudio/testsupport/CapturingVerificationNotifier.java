@@ -19,12 +19,12 @@ public class CapturingVerificationNotifier implements VerificationNotifier {
     private final List<String> notices = new CopyOnWriteArrayList<>();
 
     @Override
-    public void sendVerificationLink(String email, String displayName, String link, Instant expiresAt) {
+    public void sendVerificationLink(long userId, String email, String displayName, String link, Instant expiresAt) {
         sent.add(new Sent(email, link, expiresAt));
     }
 
     @Override
-    public void sendExistingAccountNotice(String email, String displayName, String signInLink, String resetLink) {
+    public void sendExistingAccountNotice(long userId, String email, String displayName, String signInLink, String resetLink) {
         notices.add(email);
     }
 

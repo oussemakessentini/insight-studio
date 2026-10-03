@@ -2,8 +2,13 @@ package com.oussamaksantini.insightstudio.business;
 
 import com.oussamaksantini.insightstudio.account.AccountPrincipal;
 import com.oussamaksantini.insightstudio.account.EmailVerificationService;
+import com.oussamaksantini.insightstudio.audit.AuditAction;
+import com.oussamaksantini.insightstudio.audit.AuditLog;
+import com.oussamaksantini.insightstudio.business.BusinessQueries.BusinessRow;
 import com.oussamaksantini.insightstudio.business.BusinessQueries.MemberRow;
 import com.oussamaksantini.insightstudio.business.dto.BusinessResponse;
+import com.oussamaksantini.insightstudio.business.dto.BusinessSettingsResponse;
+import com.oussamaksantini.insightstudio.business.dto.TimeZonePreviewResponse;
 import com.oussamaksantini.insightstudio.business.dto.MemberResponse;
 import com.oussamaksantini.insightstudio.common.web.ApiException;
 import com.oussamaksantini.insightstudio.tenancy.Memberships;
@@ -15,6 +20,7 @@ import java.time.ZoneId;
 import java.util.Currency;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.regex.Pattern;
 import org.slf4j.Logger;
@@ -32,7 +38,7 @@ public class BusinessService {
 
     private static final Logger log = LoggerFactory.getLogger(BusinessService.class);
 
-    static final String NOT_FOUND = "Business not found.";
+    public static final String NOT_FOUND = "Business not found.";
     static final String MEMBER_NOT_FOUND = "Member not found.";
     static final String LAST_OWNER = "A business needs at least one owner.";
     private static final int MAX_NAME_LENGTH = 200;
@@ -40,23 +46,29 @@ public class BusinessService {
     private static final Pattern CURRENCY = Pattern.compile("^[A-Z]{3}$");
 
     private final BusinessQueries queries;
-    private final BusinessRepository businesses;
     private final Memberships memberships;
     private final PublicDemo demo;
     private final EmailVerificationService verification;
+    private final AuditLog audit;
     private final SecureRandom random = new SecureRandom();
 
     BusinessService(
             BusinessQueries queries,
-            BusinessRepository businesses,
             Memberships memberships,
             PublicDemo demo,
-            EmailVerificationService verification) {
+            EmailVerificationService verification,
+            AuditLog audit) {
         this.queries = queries;
-        this.businesses = businesses;
         this.memberships = memberships;
         this.demo = demo;
         this.verification = verification;
+        this.audit = audit;
+    }
+
+    /** The message of a refused currency change (docs/account-management-contract.md §1). */
+    static String currencyLocked(String currency) {
+        return ("The currency can't change once the business has products or sales: their amounts are in %s. "
+                + "Create a new business for another currency.").formatted(currency);
     }
 
     @Transactional(readOnly = true)
@@ -84,6 +96,8 @@ public class BusinessService {
             Optional<Long> id = queries.insertBusiness(cleanName, slug, cleanCurrency, cleanZone);
             if (id.isPresent()) {
                 queries.insertMembership(caller.userId(), id.get(), Role.OWNER);
+                audit.record(id.get(), caller.userId(), AuditAction.BUSINESS_CREATED, id.get(),
+                        Map.of("name", cleanName, "currency", cleanCurrency, "timeZone", cleanZone));
                 log.info("Business {} created by account {}.", id.get(), caller.userId());
                 return new BusinessResponse(id.get(), cleanName, slug, cleanCurrency, cleanZone, Role.OWNER);
             }
@@ -91,19 +105,67 @@ public class BusinessService {
         throw ApiException.conflict("Could not find a free address for this business name; try another name.");
     }
 
-    /** OWNER: renames the business and/or changes its time zone. */
+    /**
+     * OWNER: renames the business and/or changes its time zone and/or currency. The currency can only
+     * change while the business holds no amounts (no products and no sales): 409 otherwise. Each real
+     * change writes its audit event; sending the current value changes nothing.
+     */
     @Transactional
-    public BusinessResponse update(AccountPrincipal caller, long businessId, String name, String timeZone) {
+    public BusinessResponse update(AccountPrincipal caller, long businessId, String name, String timeZone, String currency) {
         requireRole(caller, businessId, Role.OWNER);
         verification.requireVerified(caller.userId());
-        if (name == null && timeZone == null) {
-            throw ApiException.badRequest("Nothing to update: send 'name' and/or 'timeZone'.");
+        if (name == null && timeZone == null && currency == null) {
+            throw ApiException.badRequest("Nothing to update: send 'name', 'timeZone' and/or 'currency'.");
         }
-        Business business = businesses.findById(businessId).orElseThrow(() -> ApiException.notFound(NOT_FOUND));
-        String newName = name == null ? business.getName() : checkName(name);
-        String newZone = timeZone == null ? business.getTimeZone() : checkTimeZone(timeZone);
-        queries.updateBusiness(businessId, newName, newZone);
-        return new BusinessResponse(businessId, newName, business.getSlug(), business.getCurrency(), newZone, Role.OWNER);
+        String newName = name == null ? null : checkName(name);
+        String newZone = timeZone == null ? null : checkTimeZone(timeZone);
+        String newCurrency = currency == null ? null : checkCurrency(currency);
+        queries.lockBusiness(businessId);
+        BusinessRow business = queries.find(businessId).orElseThrow(() -> ApiException.notFound(NOT_FOUND));
+        newName = newName == null ? business.name() : newName;
+        newZone = newZone == null ? business.timeZone() : newZone;
+        newCurrency = newCurrency == null ? business.currency() : newCurrency;
+        if (!newCurrency.equals(business.currency()) && queries.hasMonetaryData(businessId)) {
+            throw ApiException.conflict(currencyLocked(business.currency()));
+        }
+        queries.updateBusiness(businessId, newName, newZone, newCurrency);
+        long actor = caller.userId();
+        if (!newName.equals(business.name())) {
+            audit.record(businessId, actor, AuditAction.BUSINESS_RENAMED, businessId, Map.of("from", business.name(), "to", newName));
+        }
+        if (!newZone.equals(business.timeZone())) {
+            audit.record(businessId, actor, AuditAction.BUSINESS_TIME_ZONE_CHANGED, businessId,
+                    Map.of("from", business.timeZone(), "to", newZone));
+        }
+        if (!newCurrency.equals(business.currency())) {
+            audit.record(businessId, actor, AuditAction.BUSINESS_CURRENCY_CHANGED, businessId,
+                    Map.of("from", business.currency(), "to", newCurrency));
+            log.info("Account {} changed the currency of business {} to {}.", actor, businessId, newCurrency);
+        }
+        return new BusinessResponse(businessId, newName, business.slug(), newCurrency, newZone, Role.OWNER);
+    }
+
+    /** VIEWER+: the business's settings and whether its currency may still change. */
+    @Transactional(readOnly = true)
+    public BusinessSettingsResponse settings(AccountPrincipal caller, long businessId) {
+        Role role = requireRole(caller, businessId, Role.VIEWER);
+        BusinessRow business = queries.find(businessId).orElseThrow(() -> ApiException.notFound(NOT_FOUND));
+        boolean locked = queries.hasMonetaryData(businessId);
+        return new BusinessSettingsResponse(businessId, business.name(), business.slug(), business.currency(),
+                business.timeZone(), role, !locked, locked ? currencyLocked(business.currency()) : null, business.createdAt());
+    }
+
+    /**
+     * OWNER: what changing the time zone to {@code timeZone} would do to the reports: how many sales
+     * fall on another local day or month, and the months whose totals change (newest first, at most
+     * {@value BusinessQueries#PREVIEW_MONTHS}). Nothing is changed.
+     */
+    @Transactional(readOnly = true)
+    public TimeZonePreviewResponse timeZonePreview(AccountPrincipal caller, long businessId, String timeZone) {
+        requireRole(caller, businessId, Role.OWNER);
+        String to = checkTimeZone(timeZone);
+        BusinessRow business = queries.find(businessId).orElseThrow(() -> ApiException.notFound(NOT_FOUND));
+        return queries.timeZonePreview(businessId, business.timeZone(), to);
     }
 
     /** ADMIN+: the business's members. */
@@ -125,6 +187,10 @@ public class BusinessService {
             throw ApiException.conflict(LAST_OWNER);
         }
         queries.updateRole(businessId, userId, role);
+        if (target.role() != role) {
+            audit.record(businessId, caller.userId(), AuditAction.MEMBER_ROLE_CHANGED, userId,
+                    Map.of("from", target.role().name(), "to", role.name()));
+        }
         log.info("Account {} changed the role of account {} in business {} to {}.", caller.userId(), userId, businessId, role);
         return queries.member(businessId, userId).map(BusinessService::response).orElseThrow();
     }
@@ -153,6 +219,8 @@ public class BusinessService {
             throw ApiException.conflict(LAST_OWNER);
         }
         queries.deleteMembership(businessId, userId);
+        audit.record(businessId, caller.userId(), self ? AuditAction.MEMBER_LEFT : AuditAction.MEMBER_REMOVED, userId,
+                Map.of("role", target.role().name()));
         log.info("Account {} removed account {} from business {}.", caller.userId(), userId, businessId);
     }
 
@@ -207,7 +275,7 @@ public class BusinessService {
         throw ApiException.badRequest("'currency' must be an ISO 4217 code such as EUR or USD.");
     }
 
-    private static String checkTimeZone(String timeZone) {
+    static String checkTimeZone(String timeZone) {
         String clean = timeZone == null ? "" : timeZone.strip();
         if (!ZoneId.getAvailableZoneIds().contains(clean)) {
             throw ApiException.badRequest("'timeZone' must be an IANA time zone such as Europe/Paris.");

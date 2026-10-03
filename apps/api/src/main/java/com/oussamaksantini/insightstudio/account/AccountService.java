@@ -36,6 +36,7 @@ public class AccountService {
 
     static final String INVALID_CREDENTIALS = "Invalid email or password.";
     static final String INVALID_RESET_LINK = "This reset link is invalid or has expired.";
+    public static final String WRONG_PASSWORD = "Your password is incorrect.";
     static final Duration RESET_TOKEN_LIFETIME = Duration.ofMinutes(30);
     private static final int RESET_TOKEN_BYTES = 32;
     private static final int MAX_EMAIL_LENGTH = 254;
@@ -174,6 +175,28 @@ public class AccountService {
     }
 
     /**
+     * Reauthentication before a destructive action (deleting a business or the account): checks the
+     * signed-in account's current password exactly like {@link #changePassword} does, with the same
+     * rate limits (failures count towards the sign-in limits of the email and the IP; 429 once
+     * reached). Runs outside any transaction, so a counted failure is never rolled back.
+     *
+     * @throws ApiException 400 {@value #WRONG_PASSWORD} for a missing or wrong password
+     */
+    public UserRow reauthenticate(AccountPrincipal principal, String password, String clientIp) {
+        UserRow user = users.findById(principal.userId())
+                .orElseThrow(() -> ApiException.unauthorized("Sign in to continue."));
+        limits.check(RateLimit.SIGN_IN_PER_EMAIL, user.email());
+        limits.check(RateLimit.SIGN_IN_PER_IP, clientIp);
+        boolean matches = password != null && !password.isEmpty() && PasswordPolicy.fitsBcrypt(password)
+                && encoder.matches(password, user.passwordHash());
+        if (!matches) {
+            recordFailure(user.email(), clientIp);
+            throw ApiException.badRequest(WRONG_PASSWORD);
+        }
+        return user;
+    }
+
+    /**
      * Emails a reset link when the email has an account; does nothing otherwise. The caller always
      * answers 202, so the response never reveals whether an account exists. 429 after too many
      * requests from the client IP; past {@link RateLimit#RESET_EMAIL_PER_ADDRESS} for one address
@@ -199,7 +222,7 @@ public class AccountService {
         transactions.executeWithoutResult(status -> {
             users.invalidateResetTokens(user.get().id());
             users.insertResetToken(user.get().id(), sha256(token), expiresAt);
-            notifier.sendResetLink(user.get().email(), user.get().displayName(),
+            notifier.sendResetLink(user.get().id(), user.get().email(), user.get().displayName(),
                     properties.link("/reset-password", token), expiresAt);
         });
     }

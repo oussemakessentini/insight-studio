@@ -1,5 +1,7 @@
 package com.oussamaksantini.insightstudio.chart;
 
+import com.oussamaksantini.insightstudio.audit.AuditAction;
+import com.oussamaksantini.insightstudio.audit.AuditLog;
 import com.oussamaksantini.insightstudio.business.Business;
 import com.oussamaksantini.insightstudio.chart.ChartEngine.ChartFigures;
 import com.oussamaksantini.insightstudio.chart.ChartEngine.ChartQuery;
@@ -62,6 +64,7 @@ public class ChartService {
     private final ChartEngines engines;
     private final ChartResults results;
     private final PeriodResolver periods;
+    private final AuditLog audit;
 
     ChartService(
             CurrentBusiness current,
@@ -71,7 +74,8 @@ public class ChartService {
             ChartCatalog catalog,
             ChartEngines engines,
             ChartResults results,
-            PeriodResolver periods) {
+            PeriodResolver periods,
+            AuditLog audit) {
         this.current = current;
         this.reporting = reporting;
         this.queries = queries;
@@ -80,6 +84,7 @@ public class ChartService {
         this.engines = engines;
         this.results = results;
         this.periods = periods;
+        this.audit = audit;
     }
 
     public ChartCatalogResponse catalog() {
@@ -136,7 +141,10 @@ public class ChartService {
         BusinessAccess access = current.require(Role.ADMIN);
         Business business = reporting.currentBusiness(Role.ADMIN);
         ChartDefinition definition = validator.validate(body, business, true);
-        return response(load(business, insert(business, definition, access.userId(), true)));
+        ChartRow created = load(business, insert(business, definition, access.userId(), true));
+        audit.record(business.getId(), access.userId(), AuditAction.CHART_CREATED, created.id(),
+                Map.of("title", created.title(), "revision", created.revision()));
+        return response(created);
     }
 
     /** Saves {@code definition} as the next revision, if the chart is still at {@code expectedRevision}. */
@@ -171,6 +179,8 @@ public class ChartService {
         }
         queries.insertRevision(business.getId(), id, revision, definition.schemaVersion(),
                 definition.toJson().toString(), access.userId());
+        audit.record(business.getId(), access.userId(), AuditAction.CHART_UPDATED, id,
+                Map.of("title", definition.title(), "revision", revision));
         return response(load(business, id));
     }
 
@@ -207,15 +217,22 @@ public class ChartService {
         ObjectNode copy = (ObjectNode) JSON.readTree(source.definition());
         copy.put("title", title);
         ChartDefinition definition = validator.validate(copy, business, true);
-        return response(load(business, insert(business, definition, access.userId(), chosen)));
+        ChartRow created = load(business, insert(business, definition, access.userId(), chosen));
+        audit.record(business.getId(), access.userId(), AuditAction.CHART_DUPLICATED, created.id(),
+                Map.of("title", created.title(), "fromChartId", id));
+        return response(created);
     }
 
     @Transactional
     public void delete(long id) {
+        BusinessAccess access = current.require(Role.ADMIN);
         Business business = reporting.currentBusiness(Role.ADMIN);
+        ChartRow chart = load(business, id);
         if (!queries.delete(business.getId(), id)) {
             throw ApiException.notFound(NOT_FOUND);
         }
+        audit.record(business.getId(), access.userId(), AuditAction.CHART_DELETED, id,
+                Map.of("title", chart.title(), "revision", chart.revision()));
     }
 
     // ---------------------------------------------------------------- helpers

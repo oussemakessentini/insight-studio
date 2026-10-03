@@ -14,11 +14,13 @@ import org.springframework.context.annotation.Import;
  */
 // The shared context captures emails instead of queueing them; no outbox worker runs in it (the
 // mail tests start their own instances with one).
-@SpringBootTest(webEnvironment = WebEnvironment.RANDOM_PORT, properties = "insight.mail.outbox.enabled=false")
+// Neither the Cube purge worker nor the retention purge runs on its own: tests call them.
+@SpringBootTest(webEnvironment = WebEnvironment.RANDOM_PORT, properties = {
+    "insight.mail.outbox.enabled=false", "insight.cube-purge.poll-interval=PT24H", "insight.retention.cron=-"})
 @AutoConfigureMockMvc
 @Import({TestcontainersConfiguration.class, TestSupportConfiguration.class})
 public abstract class PostgresIntegrationTest {
 
-    protected static final String TRUNCATE_ALL = "TRUNCATE mail_outbox, email_verification_tokens, spring_session, rate_limit_hits, invitations, password_reset_tokens, dashboard_chart_refs, dashboard_revisions, dashboards, chart_definition_revisions, chart_definitions, saved_reports, memberships, users, import_batches, "
+    protected static final String TRUNCATE_ALL = "TRUNCATE audit_events, cube_purge_requests, mail_outbox, email_verification_tokens, spring_session, rate_limit_hits, invitations, password_reset_tokens, dashboard_chart_refs, dashboard_revisions, dashboards, chart_definition_revisions, chart_definitions, saved_reports, memberships, users, import_batches, "
             + "sale_items, sales, products, stores, businesses RESTART IDENTITY CASCADE";
 }

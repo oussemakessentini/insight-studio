@@ -100,8 +100,10 @@ class InvitationQueries {
                 Map.of("sha", tokenSha256), InvitationQueries::row).stream().findFirst();
     }
 
-    void revoke(long invitationId) {
-        jdbc.update("UPDATE invitations SET revoked_at = now() WHERE id = :id AND revoked_at IS NULL", Map.of("id", invitationId));
+    /** Revokes the invitation unless it was already revoked or accepted; returns whether it did. */
+    boolean revoke(long invitationId) {
+        return jdbc.update("UPDATE invitations SET revoked_at = now() WHERE id = :id AND revoked_at IS NULL AND accepted_at IS NULL",
+                Map.of("id", invitationId)) == 1;
     }
 
     void markAccepted(long invitationId, long userId) {

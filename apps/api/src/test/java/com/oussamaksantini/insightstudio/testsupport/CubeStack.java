@@ -5,6 +5,12 @@ import java.nio.file.Path;
 import java.security.SecureRandom;
 import java.time.Duration;
 import java.util.HexFormat;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import org.testcontainers.containers.Container.ExecResult;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
 import org.springframework.boot.jdbc.autoconfigure.JdbcConnectionDetails;
 import org.testcontainers.containers.BindMode;
 import org.testcontainers.containers.GenericContainer;
@@ -37,6 +43,16 @@ public final class CubeStack implements AutoCloseable {
             .withStartupTimeout(Duration.ofMinutes(3));
     private GenericContainer<?> cubeStore;
     private GenericContainer<?> cube;
+    /** Extra Cube environment (e.g. how quickly superseded rollup tables are dropped). */
+    private final Map<String, String> extraCubeEnv;
+
+    public CubeStack() {
+        this(Map.of());
+    }
+
+    public CubeStack(Map<String, String> extraCubeEnv) {
+        this.extraCubeEnv = new LinkedHashMap<>(extraCubeEnv);
+    }
 
     public void startDatabase() {
         postgres.start();
@@ -72,6 +88,7 @@ public final class CubeStack implements AutoCloseable {
                 .withEnv("CUBEJS_CUBESTORE_HOST", "cubestore")
                 .withEnv("CUBEJS_SCHEDULED_REFRESH_TIMEZONES", REFRESH_TIME_ZONES)
                 .withEnv("CUBEJS_TELEMETRY", "false")
+                .withEnv(extraCubeEnv)
                 .withFileSystemBind(model.toString(), "/cube/conf", BindMode.READ_ONLY)
                 .withExposedPorts(CUBE_PORT)
                 .waitingFor(Wait.forHttp("/readyz").forPort(CUBE_PORT).forStatusCode(200))
@@ -111,6 +128,89 @@ public final class CubeStack implements AutoCloseable {
         };
     }
 
+    /**
+     * Runs each of {@code sqls} on Cube Store and returns their rows ({@code null} for a statement that
+     * failed, e.g. on a table dropped meanwhile). Cube Store has no JDBC driver on the test classpath,
+     * so the statements run inside the Cube container with Cube's own Cube Store driver (the WebSocket
+     * protocol on port 3030, exactly as Cube itself talks to Cube Store).
+     */
+    public List<List<JsonNode>> cubeStoreQueries(List<String> sqls) {
+        String script = """
+                const { CubeStoreDriver } = require('@cubejs-backend/cubestore-driver');
+                const driver = new CubeStoreDriver({ host: 'cubestore', port: 3030 });
+                (async () => {
+                  const results = [];
+                  for (const sql of JSON.parse(process.argv[1])) {
+                    try { results.push(await driver.query(sql, [])); } catch (e) { results.push(null); }
+                  }
+                  process.stdout.write('ROWS' + JSON.stringify(results));
+                  await driver.release();
+                })().then(() => process.exit(0), (e) => { console.error(e.message); process.exit(1); });
+                """;
+        try {
+            ExecResult result = cube.execInContainer("node", "-e", script, JSON.writeValueAsString(sqls));
+            if (result.getExitCode() != 0) {
+                throw new IllegalStateException("Cube Store query failed: " + result.getStderr());
+            }
+            String out = result.getStdout();
+            JsonNode all = JSON.readTree(out.substring(out.indexOf("ROWS") + 4));
+            List<List<JsonNode>> results = new java.util.ArrayList<>();
+            for (JsonNode rows : all) {
+                if (rows.isNull()) {
+                    results.add(null);
+                } else {
+                    List<JsonNode> list = new java.util.ArrayList<>();
+                    rows.forEach(list::add);
+                    results.add(list);
+                }
+            }
+            return results;
+        } catch (java.io.IOException e) {
+            throw new IllegalStateException(e);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(e);
+        }
+    }
+
+    public List<JsonNode> cubeStoreQuery(String sql) {
+        List<JsonNode> rows = cubeStoreQueries(List.of(sql)).getFirst();
+        if (rows == null) {
+            throw new IllegalStateException("Cube Store query failed: " + sql);
+        }
+        return rows;
+    }
+
+    /** Every table in Cube's pre-aggregation schema ({@code prod_pre_aggregations}), as schema.table. */
+    public List<String> preAggregationTables() {
+        return cubeStoreQuery("SELECT table_schema, table_name FROM information_schema.tables").stream()
+                .filter(t -> t.get("table_schema").asString().endsWith("pre_aggregations"))
+                .map(t -> t.get("table_schema").asString() + "." + t.get("table_name").asString())
+                .toList();
+    }
+
+    /**
+     * The rows of {@code businessId} in every pre-aggregation table, by table: every rollup of the model
+     * has its cube's {@code business_id} as a dimension (column {@code <cube>__business_id}). A table
+     * dropped while this runs is left out.
+     */
+    public Map<String, Long> businessRowsPerTable(long businessId) {
+        List<String> tables = preAggregationTables();
+        List<String> sqls = tables.stream().map(table -> {
+            String name = table.substring(table.indexOf('.') + 1);
+            String cube = name.substring(0, name.indexOf("_daily_"));
+            return "SELECT count(*) AS n FROM %s WHERE %s__business_id = %d".formatted(table, cube, businessId);
+        }).toList();
+        List<List<JsonNode>> counts = cubeStoreQueries(sqls);
+        Map<String, Long> rows = new LinkedHashMap<>();
+        for (int i = 0; i < tables.size(); i++) {
+            if (counts.get(i) != null) {
+                rows.put(tables.get(i), counts.get(i).getFirst().get("n").asLong());
+            }
+        }
+        return rows;
+    }
+
     /** Cube's recent log, for diagnosing a failed test (contains no secrets). */
     public String cubeLogs() {
         return cube == null ? "" : cube.getLogs();
@@ -127,6 +227,8 @@ public final class CubeStack implements AutoCloseable {
         postgres.stop();
         network.close();
     }
+
+    private static final JsonMapper JSON = JsonMapper.builder().build();
 
     private static byte[] random(int bytes) {
         byte[] value = new byte[bytes];

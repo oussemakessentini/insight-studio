@@ -36,18 +36,19 @@ public class UserQueries {
     }
 
     public Optional<UserRow> findByEmail(String email) {
-        return jdbc.query("SELECT " + COLUMNS + " FROM users WHERE lower(email) = lower(:email)",
+        return jdbc.query("SELECT " + COLUMNS + " FROM users WHERE lower(email) = lower(:email) AND deleted_at IS NULL",
                 Map.of("email", email), USER).stream().findFirst();
     }
 
     public Optional<UserRow> findById(long id) {
-        return jdbc.query("SELECT " + COLUMNS + " FROM users WHERE id = :id", Map.of("id", id), USER)
+        return jdbc.query("SELECT " + COLUMNS + " FROM users WHERE id = :id AND deleted_at IS NULL", Map.of("id", id), USER)
                 .stream().findFirst();
     }
 
-    /** The stored session version, or empty when the user no longer exists. */
+    /** The stored session version, or empty when the user no longer exists (or was deleted). */
     public Optional<Integer> sessionVersion(long id) {
-        return jdbc.queryForList("SELECT session_version FROM users WHERE id = :id", Map.of("id", id), Integer.class)
+        return jdbc.queryForList("SELECT session_version FROM users WHERE id = :id AND deleted_at IS NULL",
+                        Map.of("id", id), Integer.class)
                 .stream().findFirst();
     }
 
