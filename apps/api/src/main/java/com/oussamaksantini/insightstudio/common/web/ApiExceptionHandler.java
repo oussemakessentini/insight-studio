@@ -40,6 +40,14 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
                 .body(ProblemDetail.forStatusAndDetail(ex.getStatus(), ex.getMessage()));
     }
 
+    /** Invalid fields of a JSON body checked by the service: {@code errors: [{field, message}]}. */
+    @ExceptionHandler(FieldErrorsException.class)
+    ProblemDetail handleFieldErrors(FieldErrorsException ex) {
+        ProblemDetail body = ProblemDetail.forStatusAndDetail(ex.getStatus(), ex.getMessage());
+        body.setProperty("errors", ex.getErrors());
+        return body;
+    }
+
     @ExceptionHandler(ApiException.class)
     ProblemDetail handleApiException(ApiException ex) {
         return ProblemDetail.forStatusAndDetail(ex.getStatus(), ex.getMessage());
