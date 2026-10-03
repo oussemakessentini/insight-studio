@@ -13,6 +13,10 @@ export type Route =
   | { name: 'reports' }
   | { name: 'savedReports' }
   | { name: 'savedReport'; savedReportId: number }
+  | { name: 'charts' }
+  | { name: 'chartNew' }
+  | { name: 'chart'; chartId: number }
+  | { name: 'chartEdit'; chartId: number }
   | { name: 'imports' }
   | { name: 'import'; importId: number }
   | { name: 'signIn' }
@@ -55,6 +59,11 @@ export function usePathname(): string {
   return useSyncExternalStore(subscribe, () => window.location.pathname)
 }
 
+/** Current query string; re-renders on any navigation, including links that only change the query. */
+export function useSearch(): string {
+  return useSyncExternalStore(subscribe, () => window.location.search)
+}
+
 // Counts back/forward navigations. Registered at import time so it runs before React's own
 // popstate subscribers read the snapshot.
 let historyVersion = 0
@@ -91,6 +100,12 @@ export function matchRoute(pathname: string): Route {
   if (path === '/reports/saved') return { name: 'savedReports' }
   const savedReport = /^\/reports\/saved\/(\d+)$/.exec(path)
   if (savedReport) return { name: 'savedReport', savedReportId: Number(savedReport[1]) }
+  if (path === '/charts') return { name: 'charts' }
+  if (path === '/charts/new') return { name: 'chartNew' }
+  const chart = /^\/charts\/(\d+)$/.exec(path)
+  if (chart) return { name: 'chart', chartId: Number(chart[1]) }
+  const chartEdit = /^\/charts\/(\d+)\/edit$/.exec(path)
+  if (chartEdit) return { name: 'chartEdit', chartId: Number(chartEdit[1]) }
   if (path === '/imports') return { name: 'imports' }
   const batch = /^\/imports\/(\d+)$/.exec(path)
   if (batch) return { name: 'import', importId: Number(batch[1]) }
