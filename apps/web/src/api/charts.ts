@@ -124,8 +124,11 @@ export interface ChartCatalog {
   rules: CatalogRule[]
   presets: { key: RelativePreset; label: string }[]
   filters: CatalogFilter[]
-  /** Numeric limits (e.g. the maximum `limit`, range days); see `lib/charts.ts` for the defaults. */
-  limits: Record<string, number | undefined>
+  /**
+   * Numeric limits (e.g. `maxLimit`, `maxRangeDays`) and `maxRangeDaysByGranularity` per granularity;
+   * see `lib/charts.ts` for the defaults.
+   */
+  limits: Record<string, number | Partial<Record<Granularity, number>> | undefined>
   engines: ChartEngine[]
   defaultEngine: ChartEngine
 }

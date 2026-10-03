@@ -124,24 +124,24 @@ export const CHART_DEFAULTS = {
   weekRangeDays: 1098,
 }
 
-/** A catalogue limit under any of its likely names, else the contract default. */
-export function catalogLimit(catalog: ChartCatalog, names: string[], fallback: number): number {
-  for (const name of names) {
-    const value = catalog.limits?.[name]
-    if (typeof value === 'number' && Number.isFinite(value) && value > 0) return value
-  }
-  return fallback
+/** A positive number from the catalogue's `limits` (a key, or `parent.key` one level down), else the contract default. */
+export function catalogLimit(catalog: ChartCatalog, path: string, fallback: number): number {
+  const [first, second] = path.split('.')
+  const raw: unknown = catalog.limits?.[first]
+  const value = second === undefined ? raw : (raw as Record<string, unknown> | undefined)?.[second]
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : fallback
 }
 
+/** The limits the API publishes in the catalogue (docs/chart-builder-api.md), with contract defaults. */
 export function chartLimits(catalog: ChartCatalog) {
   return {
-    titleMax: catalogLimit(catalog, ['titleMaxLength', 'maxTitleLength', 'titleMax'], CHART_DEFAULTS.titleMax),
-    limitMax: catalogLimit(catalog, ['maxLimit', 'limitMax', 'maxGroups'], CHART_DEFAULTS.limitMax),
-    limitDefault: catalogLimit(catalog, ['defaultLimit', 'limitDefault'], CHART_DEFAULTS.limitDefault),
-    filterMax: catalogLimit(catalog, ['maxFilterValues', 'filterMax', 'maxFilterEntries'], CHART_DEFAULTS.filterMax),
-    maxRangeDays: catalogLimit(catalog, ['maxRangeDays', 'rangeDaysMax'], CHART_DEFAULTS.maxRangeDays),
-    dayRangeDays: catalogLimit(catalog, ['maxDayRangeDays', 'dayGranularityMaxDays'], CHART_DEFAULTS.dayRangeDays),
-    weekRangeDays: catalogLimit(catalog, ['maxWeekRangeDays', 'weekGranularityMaxDays'], CHART_DEFAULTS.weekRangeDays),
+    titleMax: catalogLimit(catalog, 'maxTitleLength', CHART_DEFAULTS.titleMax),
+    limitMax: catalogLimit(catalog, 'maxLimit', CHART_DEFAULTS.limitMax),
+    limitDefault: catalogLimit(catalog, 'defaultLimit', CHART_DEFAULTS.limitDefault),
+    filterMax: catalogLimit(catalog, 'maxFilterValues', CHART_DEFAULTS.filterMax),
+    maxRangeDays: catalogLimit(catalog, 'maxRangeDays', CHART_DEFAULTS.maxRangeDays),
+    dayRangeDays: catalogLimit(catalog, 'maxRangeDaysByGranularity.day', CHART_DEFAULTS.dayRangeDays),
+    weekRangeDays: catalogLimit(catalog, 'maxRangeDaysByGranularity.week', CHART_DEFAULTS.weekRangeDays),
   }
 }
 
