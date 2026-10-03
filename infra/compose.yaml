@@ -60,6 +60,12 @@ services:
       CUBEJS_REFRESH_WORKER: "true"
       CUBEJS_CUBESTORE_HOST: cubestore
       CUBEJS_SCHEDULED_REFRESH_TIMEZONES: ${CUBEJS_SCHEDULED_REFRESH_TIMEZONES:-America/New_York}
+      # Deleting a business (docs/data-retention.md): Cube drops a superseded rollup table only at the
+      # end of a later build, and only once the table has not been touched for this many seconds
+      # (default 24 h). The API's purge worker forces that later build after CUBE_PURGE_SWEEP_DELAY
+      # (default 70 min), which must exceed this value and CUBEJS_DB_QUERY_TIMEOUT (default 10 min).
+      CUBEJS_TOUCH_PRE_AGG_TIMEOUT: "3600"
+      CUBEJS_DROP_PRE_AGG_WITHOUT_TOUCH: "true"
       CUBEJS_TELEMETRY: "false"
     ports:
       - "127.0.0.1:4000:4000"
