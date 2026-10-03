@@ -23,13 +23,22 @@ export class ApiError extends Error {
   readonly retryAfterSeconds: number | null
   /** Per-field validation errors of a 400 problem detail (`errors: [{field, message}]`), if any. */
   readonly fieldErrors: FieldError[]
+  /** The whole problem-detail body, for answers with extra members (e.g. a 409's `currentRevision`). */
+  readonly problem: Record<string, unknown> | null
 
-  constructor(status: number, message: string, retryAfterSeconds: number | null = null, fieldErrors: FieldError[] = []) {
+  constructor(
+    status: number,
+    message: string,
+    retryAfterSeconds: number | null = null,
+    fieldErrors: FieldError[] = [],
+    problem: Record<string, unknown> | null = null,
+  ) {
     super(message)
     this.name = 'ApiError'
     this.status = status
     this.retryAfterSeconds = retryAfterSeconds
     this.fieldErrors = fieldErrors
+    this.problem = problem
   }
 }
 
@@ -225,8 +234,10 @@ async function errorFrom(response: Response, options: RequestOptions): Promise<A
   const { status } = response
   let detail: string | undefined
   let fieldErrors: FieldError[] = []
+  let body: Record<string, unknown> | null = null
   try {
     const problem = (await response.json()) as ProblemDetail
+    if (problem && typeof problem === 'object') body = problem as unknown as Record<string, unknown>
     detail = problem.detail
     if (Array.isArray(problem.errors)) {
       fieldErrors = problem.errors.filter((e) => typeof e?.field === 'string' && typeof e?.message === 'string')
@@ -247,7 +258,7 @@ async function errorFrom(response: Response, options: RequestOptions): Promise<A
     // user to the sign-in page.
     window.dispatchEvent(new Event(UNAUTHORIZED_EVENT))
   }
-  return new ApiError(status, message, Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : null, fieldErrors)
+  return new ApiError(status, message, Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : null, fieldErrors, body)
 }
 
 export interface DashboardFilter {
