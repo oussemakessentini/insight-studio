@@ -14,6 +14,7 @@ import com.oussamaksantini.insightstudio.common.web.ApiException;
 import com.oussamaksantini.insightstudio.security.RateLimit;
 import com.oussamaksantini.insightstudio.security.RateLimiter;
 import com.oussamaksantini.insightstudio.tenancy.Memberships;
+import com.oussamaksantini.insightstudio.tenancy.PublicDemo;
 import com.oussamaksantini.insightstudio.tenancy.Role;
 import java.time.Clock;
 import java.time.LocalDate;
@@ -38,8 +39,10 @@ public class BusinessDataService {
     private static final Logger log = LoggerFactory.getLogger(BusinessDataService.class);
 
     static final String CONFIRM_NAME = "Type the business name exactly as shown to confirm.";
+    static final String DEMO = "The public demo business can't be deleted.";
 
     private final MemberAccess access;
+    private final PublicDemo demo;
     private final Memberships memberships;
     private final AccountDataQueries queries;
     private final BusinessExport export;
@@ -52,8 +55,10 @@ public class BusinessDataService {
     private final TransactionTemplate readOnly;
 
     BusinessDataService(MemberAccess access, Memberships memberships, AccountDataQueries queries, BusinessExport export,
-            AuditLog audit, AccountService accounts, RateLimiter limits, Clock clock, PlatformTransactionManager manager) {
+            AuditLog audit, AccountService accounts, RateLimiter limits, Clock clock, PlatformTransactionManager manager,
+            PublicDemo demo) {
         this.access = access;
+        this.demo = demo;
         this.memberships = memberships;
         this.queries = queries;
         this.export = export;
@@ -115,6 +120,11 @@ public class BusinessDataService {
     public void delete(AccountPrincipal caller, long businessId, String password, String confirmName, String clientIp) {
         access.requireVerified(caller, businessId, Role.OWNER);
         BusinessRow business = queries.business(businessId, false).orElseThrow(BusinessDataService::notFound);
+        // The configured public demo business (by slug, whether or not the demo is on and even if an
+        // operator gave it members) is never deleted through the API.
+        if (business.slug().equalsIgnoreCase(demo.reservedSlug())) {
+            throw ApiException.conflict(DEMO);
+        }
         if (confirmName == null || !confirmName.strip().equals(business.name())) {
             throw ApiException.badRequest(CONFIRM_NAME);
         }

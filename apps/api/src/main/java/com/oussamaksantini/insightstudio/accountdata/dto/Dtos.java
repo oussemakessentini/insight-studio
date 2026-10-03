@@ -37,8 +37,13 @@ public final class Dtos {
     public record BlockingBusiness(long businessId, String businessName) {
     }
 
-    /** {@code GET /api/account/deletion-preview}. */
+    /**
+     * {@code GET /api/account/deletion-preview}.
+     *
+     * @param openInvitationsSent open invitations the account sent (in any business); deleting the account
+     *     revokes them
+     */
     public record AccountDeletionPreview(AccountRef account, List<MembershipPreview> memberships,
-            List<BlockingBusiness> blockingBusinesses, Map<String, Long> authoredContent) {
+            List<BlockingBusiness> blockingBusinesses, Map<String, Long> authoredContent, long openInvitationsSent) {
     }
 }

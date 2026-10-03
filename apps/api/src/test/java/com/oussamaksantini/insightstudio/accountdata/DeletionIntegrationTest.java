@@ -221,6 +221,22 @@ class DeletionIntegrationTest extends PostgresIntegrationTest {
     }
 
     @Test
+    void theConfiguredPublicDemoBusinessCannotBeDeletedEvenWithAnOwner() throws Exception {
+        // insight.demo.business-slug is fieldstone-apparel; an operator gave the demo business an owner.
+        long demo = db.business("Fieldstone Apparel", "fieldstone-apparel", "USD", "America/New_York");
+        TestUser demoOwner = accounts.member("owner@fieldstone.example", demo, Role.OWNER);
+        mvc.perform(get("/api/businesses/" + demo + "/deletion-preview").with(as(demoOwner, demo)))
+                .andExpect(status().isOk());
+        deleteBusiness(demoOwner, demo, TestAccounts.PASSWORD, "Fieldstone Apparel")
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.detail").value("The public demo business can't be deleted."));
+        assertThat(rowsOf(demo).get("businesses")).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM cube_purge_requests", Long.class)).isZero();
+        // Refused before the password check: no failed attempt was counted.
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM rate_limit_hits WHERE bucket LIKE 'sign-in:%'", Long.class)).isZero();
+    }
+
+    @Test
     void wrongPasswordsAreRateLimitedLikePasswordChanges() throws Exception {
         for (int i = 0; i < 5; i++) {
             deleteBusiness(owner, doomed, "wrong " + i, "Doomed Co").andExpect(status().isBadRequest());
@@ -294,6 +310,24 @@ class DeletionIntegrationTest extends PostgresIntegrationTest {
                  "filters": {"storeIds": [], "categories": [], "productIds": []}, "limit": 10, "engine": "sql"}
                 """;
         json(post("/api/charts"), admin, kept, chart).andExpect(status().isCreated());
+        // Invitations the admin sent: two open ones (with their pending emails), one already accepted.
+        json(post("/api/businesses/" + kept + "/invitations"), admin, kept,
+                "{\"email\":\"sent-1@example.com\",\"role\":\"VIEWER\"}").andExpect(status().isCreated());
+        json(post("/api/businesses/" + doomed + "/invitations"), admin, doomed,
+                "{\"email\":\"sent-2@example.com\",\"role\":\"ADMIN\"}").andExpect(status().isCreated());
+        jdbc.update("""
+                INSERT INTO invitations (business_id, email, role, token_sha256, invited_by, expires_at, accepted_at, accepted_by)
+                VALUES (?, 'accepted@example.com', 'VIEWER', ?, ?, now() + interval '1 day', now(), ?)
+                """, kept, "e".repeat(64), admin.id(), keptOwner.id());
+        transactions.executeWithoutResult(status -> {
+            outbox.enqueue("invitation", "sent-1@example.com", "Invited", "Open https://example.test/invite?token=S1",
+                    Instant.now().plusSeconds(600), kept, null);
+            outbox.enqueue("invitation", "Sent-2@example.com", "Invited", "Open https://example.test/invite?token=S2",
+                    Instant.now().plusSeconds(600), doomed, null);
+        });
+        mvc.perform(get("/api/account/deletion-preview").with(as(admin, kept)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.openInvitationsSent").value(2));
         transactions.executeWithoutResult(status -> {
             outbox.enqueue("password reset", "admin@doomed.co", "Reset", "Open https://example.test/reset?token=SECRET",
                     Instant.now().plusSeconds(600), null, admin.id());
@@ -346,6 +380,23 @@ class DeletionIntegrationTest extends PostgresIntegrationTest {
                 SELECT status || ':' || (body IS NULL) FROM mail_outbox
                 WHERE user_id = ? OR lower(recipient) = 'admin@doomed.co' ORDER BY id
                 """, String.class, admin.id())).containsExactly("EXPIRED:true", "EXPIRED:true");
+        // The invitations it sent are revoked (the accepted one is left as it was), with their events written
+        // by the account before it became a tombstone, and their emails are cancelled.
+        assertThat(jdbc.queryForList("""
+                SELECT email || ':' || (revoked_at IS NOT NULL) FROM invitations WHERE invited_by = ? ORDER BY email
+                """, String.class, admin.id())).containsExactly("accepted@example.com:false", "sent-1@example.com:true",
+                "sent-2@example.com:true");
+        assertThat(jdbc.queryForList("""
+                SELECT business_id || ':' || (details ->> 'email') || ':' || (details ->> 'role') FROM audit_events
+                WHERE action = 'invitation.revoked' AND actor_user_id = ? ORDER BY business_id
+                """, String.class, admin.id())).containsExactly(doomed + ":sent-2@example.com:ADMIN",
+                kept + ":sent-1@example.com:VIEWER");
+        assertThat(jdbc.queryForList("""
+                SELECT status || ':' || (body IS NULL) FROM mail_outbox WHERE lower(recipient) LIKE 'sent-%' ORDER BY id
+                """, String.class)).containsExactly("EXPIRED:true", "EXPIRED:true");
+        String open = mvc.perform(get("/api/businesses/" + kept + "/invitations").with(as(keptOwner, kept)))
+                .andReturn().getResponse().getContentAsString();
+        assertThat(JsonPath.<List<String>>read(open, "$[*].email")).doesNotContain("sent-1@example.com");
         // Other people's pending emails are untouched.
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM mail_outbox WHERE status = 'PENDING'", Long.class)).isEqualTo(2);
 

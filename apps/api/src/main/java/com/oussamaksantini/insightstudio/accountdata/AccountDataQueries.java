@@ -183,6 +183,40 @@ class AccountDataQueries {
                 """, Map.of("email", email));
     }
 
+    /** An open invitation revoked because the account that sent it is deleted. */
+    record RevokedInvitation(long id, long businessId, String email, Role role) {
+    }
+
+    /** Open invitations (not accepted, revoked or expired) the account sent, in any business. */
+    long countOpenInvitationsSent(long userId) {
+        return jdbc.queryForObject("""
+                SELECT COUNT(*) FROM invitations
+                WHERE invited_by = :u AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at > now()
+                """, Map.of("u", userId), Long.class);
+    }
+
+    /** Revokes every open invitation the account sent and returns them. */
+    List<RevokedInvitation> revokeInvitationsSentBy(long userId) {
+        return jdbc.query("""
+                UPDATE invitations SET revoked_at = now()
+                WHERE invited_by = :u AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at > now()
+                RETURNING id, business_id, email, role
+                """, Map.of("u", userId), (rs, i) -> new RevokedInvitation(rs.getLong("id"), rs.getLong("business_id"),
+                rs.getString("email"), Role.valueOf(rs.getString("role"))));
+    }
+
+    /**
+     * The pending invitation email of a revoked invitation never goes out: EXPIRED, body erased. Outbox rows
+     * do not name their invitation, so they are matched by business, kind and recipient (an address has
+     * at most one open invitation per business).
+     */
+    int expireInvitationMail(long businessId, String email) {
+        return jdbc.update("""
+                UPDATE mail_outbox SET status = 'EXPIRED', body = NULL, locked_until = NULL, finished_at = now()
+                WHERE status = 'PENDING' AND kind = 'invitation' AND business_id = :b AND lower(recipient) = lower(:email)
+                """, Map.of("b", businessId, "email", email));
+    }
+
     void deleteAccountTokens(long userId) {
         jdbc.update("DELETE FROM password_reset_tokens WHERE user_id = :u", Map.of("u", userId));
         jdbc.update("DELETE FROM email_verification_tokens WHERE user_id = :u", Map.of("u", userId));
