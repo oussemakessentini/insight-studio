@@ -51,6 +51,7 @@ Browser ──> Vite dev server (:5173) ──/api proxy──> Spring Boot API 
 | `email_verification_tokens` | Email verification (V9): SHA-256 of a single-use token, 24-hour expiry; `users.email_verified_at` |
 | `saved_reports` | Saved report definitions (V10): name, kind, fixed dates or a relative preset, optional store of the same business (composite foreign key) |
 | `chart_definitions`, `chart_definition_revisions` | Custom charts (V14): title, current revision, and every saved version of the definition (JSON validated by the API) |
+| `dashboards`, `dashboard_revisions`, `dashboard_chart_refs` | Custom dashboards (V15): name, current revision, every saved layout (JSONB desktop and mobile grids of x, y, w, h), and the charts the current layout uses, with composite foreign keys so a dashboard can only reference its own business's charts |
 
 Revenue is always `SUM(quantity × sale_items.unit_price)`, so historical revenue is unaffected when
 a product's list price changes. Days, weeks and months are bucketed in the business's time zone.
@@ -98,6 +99,7 @@ a product's list price changes. Days, weeks and months are bucketed in the busin
 | `/reports` | Monthly and Categories reports (tab kept in the URL) with totals rows that equal the dashboard, partial months marked, CSV and PDF export, and "Save report" (owners and admins) |
 | `/reports/saved`, `/reports/saved/{id}` | Saved reports: run, export (CSV, PDF) for every member; rename, edit and delete for owners and admins |
 | `/charts`, `/charts/{id}`, `/charts/new`, `/charts/{id}/edit` | Custom charts: KPI tiles, line, bar, pie or table of revenue, orders, units or average order value by time, store, product or category, with dates, filters and a table view. Every member can open and run them (and older revisions); owners and admins build them with a preview, edit, duplicate and delete |
+| `/dashboards`, `/dashboards/{id}`, `/dashboards/{id}/edit` | Custom dashboards of saved charts next to the overview: every member views and refreshes them (and older revisions, read-only); owners and admins create, rename, duplicate and delete them, add and remove charts, and move and resize cards by drag-and-drop or with buttons and the keyboard, in separate desktop and mobile layouts. Each card loads, shows empty results and errors on its own (at most 3 chart requests at a time); leaving with unsaved changes asks first, and a save that would overwrite someone else's is refused |
 | `/imports`, `/imports/{id}` | CSV import of sales, stores or products (owners and admins): templates, column mapping with a preview, validation (dry run) with an error table and errors CSV, create-only or create-and-update for stores and products, import, and a history of every attempt with its type and outcome |
 | `/sign-in`, `/sign-up`, `/forgot-password`, `/reset-password`, `/verify-email` | Accounts, recovery and email verification |
 | `/businesses/new` | Create a business (shown after sign-up when you have none); the sidebar switches between your businesses |
@@ -329,11 +331,13 @@ belonging to other businesses return `404`.
 | `/api/saved-reports[/{id}]` | Saved report definitions: list and get (any member), create, replace/rename, delete (owners and admins) |
 | `/api/saved-reports/{id}/report[.csv\|.pdf]` | Run a saved report for its range resolved today in the business time zone; CSV and PDF exports |
 | `/api/charts/catalog` | Supported metrics, groupings, visualizations, filters, limits and the combinations that are not allowed |
-| `/api/charts[/{id}]`, `/duplicate`, `/revisions[/{n}]`, `/data`, `/api/charts/preview` | Chart definitions with revisions (owners and admins write, every member reads and runs); only validated, allowlisted definitions run, within date-range, size and time limits |
+| `/api/charts[/{id}]`, `/duplicate`, `/revisions[/{n}]`, `/data`, `/api/charts/preview` | Chart definitions with revisions (owners and admins write, every member reads and runs); only validated, allowlisted definitions run, within date-range, size and time limits; at most 6 chart runs at a time per business per API instance (`429` beyond) |
+| `/api/dashboards[/{id}]`, `/duplicate`, `/revisions`, `/api/charts/{id}/dashboards` | Custom dashboards with versioned layouts (owners and admins write, every member reads); saves carry `expectedRevision` and a stale one answers `409` with the current revision; a deleted chart's widgets are reported as missing |
 
 Details: [docs/stores.md](docs/stores.md), [docs/reports.md](docs/reports.md),
 [docs/saved-reports-api.md](docs/saved-reports-api.md), [docs/frontend-saved-reports.md](docs/frontend-saved-reports.md),
-[docs/chart-builder-api.md](docs/chart-builder-api.md), [docs/frontend-charts.md](docs/frontend-charts.md).
+[docs/chart-builder-api.md](docs/chart-builder-api.md), [docs/frontend-charts.md](docs/frontend-charts.md),
+[docs/dashboards-contract.md](docs/dashboards-contract.md), [docs/dashboards-api.md](docs/dashboards-api.md), [docs/frontend-dashboards.md](docs/frontend-dashboards.md).
 
 **CSV import** (OWNER or ADMIN with a verified email; viewers get `403`, signed-out visitors `401`),
 for `{kind}` = `sales`, `stores` or `products`: `GET /api/imports/templates/{kind}.csv`;
@@ -425,6 +429,10 @@ running. They do not touch your local database. The tests cover:
   top groups and totals) and against the reports; every unsupported combination and limit; the
   permission matrix and another business's charts out of reach; revisions and conflicts; the query
   time limit; and Cube charts equal to SQL charts, fresh after changes, 503 when Cube is down or behind
+- dashboards: layout validation (bounds, overlaps, duplicates, unknown keys, widget limits), layouts
+  stored and read back per revision, duplication, the permission matrix, another business's
+  dashboards and charts out of reach (also refused by the database), conflicting saves answering
+  409 without overwriting, deleted charts reported as missing, and the chart run limit
 - saved reports: every endpoint against OWNER, ADMIN, VIEWER, unverified and signed-out callers;
   another business's definitions and stores answer 404 everywhere, including exports; every
   relative preset at month, quarter, year and leap-year boundaries and in time zones a day apart
@@ -442,6 +450,8 @@ running. They do not touch your local database. The tests cover:
 - Reports: on-demand monthly and category reports with CSV export
 - Saved reports (fixed or rolling date ranges, per store) and PDF export of every report
 - Custom charts with a catalogue-driven builder, preview and revision history (SQL by default, Cube on request)
+- Custom dashboards of saved charts with versioned desktop and mobile layouts, drag-and-drop and
+  keyboard editing, and conflict detection
 - Accounts, businesses and roles (owner, admin, viewer) with server-side authorization and
   business isolation on every endpoint; password recovery by email
 - Email invitations; sessions and rate limits in PostgreSQL for several API instances; trusted
@@ -460,7 +470,6 @@ running. They do not touch your local database. The tests cover:
 - Scheduled report emails (saved reports sent through the mail outbox)
 - Run the Cube trial ([docs/cube-trial.md](docs/cube-trial.md)) on production-like data; if it passes,
   make Cube the default report engine, then retire the SQL report queries
-- Drag-and-drop dashboards made of saved charts (layouts stored separately from chart definitions)
 - Dashboard panels served from Cube
 - Forecasting in `services/analytics`
 - Per-store breakdown on the product page
