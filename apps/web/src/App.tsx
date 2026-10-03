@@ -50,6 +50,7 @@ import { ChartPage } from './pages/ChartPage'
 import { ChartsPage, ChartsSignIn } from './pages/ChartsPage'
 import { DashboardPage } from './pages/DashboardPage'
 import { DashboardsPage, DashboardsSignIn } from './pages/DashboardsPage'
+import { DashboardViewPage } from './pages/DashboardViewPage'
 import { ImportDetailPage } from './pages/ImportDetailPage'
 import { ImportsPage } from './pages/ImportsPage'
 import { MembersPage } from './pages/MembersPage'
@@ -239,6 +240,12 @@ function Workspace({
     >
       {route.name === 'dashboard' && <DashboardPage {...pageProps} />}
       {route.name === 'dashboards' && (dashboards.available ? <DashboardsPage {...pageProps} /> : <DashboardsSignIn />)}
+      {route.name === 'dashboardView' &&
+        (dashboards.available ? (
+          <DashboardViewPage key={route.dashboardId} dashboardId={route.dashboardId} {...pageProps} />
+        ) : (
+          <DashboardsSignIn />
+        ))}
       {route.name === 'products' && <ProductsPage {...pageProps} />}
       {/* Keyed so switching products starts from a clean state. */}
       {route.name === 'product' && <ProductDetailPage key={route.productId} productId={route.productId} {...pageProps} />}
@@ -294,6 +301,7 @@ function sectionOf(route: Route): Section | null {
     case 'dashboard':
       return 'dashboard'
     case 'dashboards':
+    case 'dashboardView':
       return 'dashboards'
     case 'products':
     case 'product':

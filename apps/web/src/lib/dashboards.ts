@@ -42,3 +42,9 @@ export function dashboardNameError(name: string): string | null {
 export function widgetCountLabel(count: number): string {
   return `${count} ${count === 1 ? 'chart' : 'charts'}`
 }
+
+/** `?revision=n` opens an older revision read-only; anything else is the current one. */
+export function revisionParam(search: string): number | null {
+  const value = new URLSearchParams(search).get('revision')
+  return value && /^\d+$/.test(value) && Number(value) > 0 ? Number(value) : null
+}

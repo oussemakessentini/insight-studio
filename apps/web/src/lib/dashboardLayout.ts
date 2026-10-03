@@ -1,6 +1,7 @@
 // Dashboard layouts (docs/dashboards-contract.md §1, §2): pure functions that keep a layout valid
 // while it is edited. The server validates every save again; these rules mirror its checks so the
 // editor never offers a layout it would refuse.
+import type { CSSProperties } from 'react'
 import type { DashboardLayout, DashboardWidget, LayoutGrid, LayoutItem } from '../api/dashboards'
 
 export type GridName = 'desktop' | 'mobile'
@@ -27,6 +28,11 @@ const WIDGET_ID = /^[A-Za-z0-9_-]{1,40}$/
 
 export function overlaps(a: Omit<LayoutItem, 'id'>, b: Omit<LayoutItem, 'id'>): boolean {
   return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
+}
+
+/** Grid placement of one item (CSS grid lines count from 1). */
+export function cellStyle(item: Omit<LayoutItem, 'id'>): CSSProperties {
+  return { gridColumn: `${item.x + 1} / span ${item.w}`, gridRow: `${item.y + 1} / span ${item.h}` }
 }
 
 /** Items in reading order: top to bottom, then left to right. */
