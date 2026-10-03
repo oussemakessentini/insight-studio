@@ -11,6 +11,7 @@ import { Link } from '../components/Link'
 import { PageHeader } from '../components/PageHeader'
 import { ErrorState, Panel, Skeleton } from '../components/Panel'
 import { useApi, type ApiState } from '../hooks/useApi'
+import { useUnsavedChanges } from '../hooks/useUnsavedChanges'
 import { VISUALIZATION_LABELS } from '../lib/charts'
 import {
   addWidget,
@@ -127,6 +128,8 @@ function DashboardEditor({ initial, charts, context, href, onReload }: EditorPro
   const nameError = nameTaken ?? dashboardNameError(name)
   const missingIds = new Set(layout.widgets.filter((w) => chartInfo.get(w.id) == null).map((w) => w.id))
   const dirty = name.trim() !== initial.name || !sameLayout(layout, initial.layout)
+  // Leaving with unsaved changes asks first (links, back/forward, refresh, closing the tab).
+  const unsaved = useUnsavedChanges(dirty && !saving)
   const placed = new Set(layout.widgets.map((w) => w.chartId))
   const full =
     layout.widgets.length >= MAX_WIDGETS ? `A dashboard can show at most ${MAX_WIDGETS} charts. Remove one to add another.` : null
@@ -193,7 +196,7 @@ function DashboardEditor({ initial, charts, context, href, onReload }: EditorPro
     setSaving(true)
     try {
       await dashboardsApi.update(initial.id, name.trim(), layout, baseRevision)
-      navigate(viewHref)
+      navigate(viewHref, { force: true })
     } catch (err) {
       setSaving(false)
       const stale = dashboardConflict(err)
@@ -355,6 +358,22 @@ function DashboardEditor({ initial, charts, context, href, onReload }: EditorPro
         onPick={add}
         onClose={() => setPicking(false)}
       />
+
+      <Dialog open={unsaved.asking} title="Leave without saving?" onClose={unsaved.stay}>
+        <div className="form-stack">
+          <p className="dialog-text">
+            Your changes to “{name.trim() || initial.name}” aren’t saved yet. If you leave now, they are lost.
+          </p>
+          <div className="form-actions dialog-actions">
+            <button type="button" className="button button-secondary" onClick={unsaved.stay}>
+              Stay and keep editing
+            </button>
+            <button type="button" className="button button-danger" onClick={unsaved.leave}>
+              Leave without saving
+            </button>
+          </div>
+        </div>
+      </Dialog>
 
       <Dialog open={conflict !== null} title="Someone else saved this dashboard" onClose={() => setConflict(null)}>
         {conflict && (

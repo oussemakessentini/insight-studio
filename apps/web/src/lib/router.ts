@@ -67,10 +67,72 @@ export function useSearch(): string {
   return useSyncExternalStore(subscribe, () => window.location.search)
 }
 
+// ---- Leaving a page with unsaved changes -------------------------------------------------------
+
+/** Asks whether to leave; calls `proceed` to go ahead, or nothing to stay. */
+export type NavigationBlocker = (proceed: () => void) => void
+
+let blocker: NavigationBlocker | null = null
+
+/**
+ * While set, in-app navigation (links, `navigate`, browser back/forward) asks `confirm` first.
+ * Returns the function that removes it. Refresh and closing the tab are `beforeunload`'s job.
+ */
+export function blockNavigation(confirm: NavigationBlocker): () => void {
+  blocker = confirm
+  return () => {
+    if (blocker === confirm) blocker = null
+  }
+}
+
+// Every history entry this app creates carries its position (`idx`), so a blocked back/forward
+// can be undone by going the same distance the other way.
+function entryIndex(): number | null {
+  const state: unknown = window.history.state
+  return state && typeof state === 'object' && typeof (state as { idx?: unknown }).idx === 'number' ? (state as { idx: number }).idx : null
+}
+
+if (entryIndex() === null) window.history.replaceState({ ...(window.history.state ?? {}), idx: 0 }, '')
+let currentIndex = entryIndex() ?? 0
+let currentUrl = currentLocation()
+/** The popstate of undoing a blocked back/forward: not a navigation. */
+let undoing = false
+/** The popstate of a back/forward the user confirmed: let it through. */
+let confirmed = false
+
 // Counts back/forward navigations. Registered at import time so it runs before React's own
-// popstate subscribers read the snapshot.
+// popstate subscribers read the snapshot, and can hide a blocked navigation from them.
 let historyVersion = 0
-window.addEventListener('popstate', () => {
+window.addEventListener('popstate', (event) => {
+  if (undoing) {
+    undoing = false
+    event.stopImmediatePropagation()
+    return
+  }
+  const target = entryIndex()
+  const targetUrl = currentLocation()
+  if (blocker && !confirmed && target !== currentIndex) {
+    // Back on the page being left, then ask; React never sees the other page.
+    event.stopImmediatePropagation()
+    const ask = blocker
+    if (target === null) {
+      // An entry without a position (made outside this router): put this page back on top.
+      window.history.pushState({ idx: currentIndex }, '', currentUrl)
+      ask(() => navigate(targetUrl, { force: true }))
+    } else {
+      const delta = target - currentIndex
+      undoing = true
+      window.history.go(-delta)
+      ask(() => {
+        confirmed = true
+        window.history.go(delta)
+      })
+    }
+    return
+  }
+  confirmed = false
+  if (target !== null) currentIndex = target
+  currentUrl = targetUrl
   historyVersion += 1
 })
 
@@ -130,10 +192,22 @@ export function matchRoute(pathname: string): Route {
   return { name: 'notFound' }
 }
 
-/** Navigates client-side; `replace` swaps the current history entry (for redirects). */
-export function navigate(href: string, { replace = false }: { replace?: boolean } = {}): void {
-  if (replace) window.history.replaceState(null, '', href)
-  else window.history.pushState(null, '', href)
+/**
+ * Navigates client-side; `replace` swaps the current history entry (for redirects). While a page
+ * blocks navigation (unsaved changes) it asks first, unless `force` (e.g. right after saving).
+ */
+export function navigate(href: string, { replace = false, force = false }: { replace?: boolean; force?: boolean } = {}): void {
+  if (blocker && !force) {
+    blocker(() => navigate(href, { replace, force: true }))
+    return
+  }
+  if (replace) {
+    window.history.replaceState({ idx: currentIndex }, '', href)
+  } else {
+    currentIndex += 1
+    window.history.pushState({ idx: currentIndex }, '', href)
+  }
+  currentUrl = currentLocation()
   window.dispatchEvent(new Event(NAVIGATE_EVENT))
   window.scrollTo(0, 0)
 }
@@ -169,6 +243,7 @@ export function updateQuery(updates: Record<string, string | null>): void {
   const query = params.toString()
   const url = `${window.location.pathname}${query ? `?${query}` : ''}`
   if (url !== `${window.location.pathname}${window.location.search}`) {
-    window.history.replaceState(null, '', url)
+    window.history.replaceState(window.history.state, '', url)
+    currentUrl = url
   }
 }
