@@ -85,7 +85,9 @@ reauthenticate with `AccountService.reauthenticate`: the password check of the p
 same `sign-in:email` (5 per 15 minutes) and `sign-in:ip` limits, failures counted outside any
 transaction; wrong → `400 "Your password is incorrect."`, too many → `429`.
 
-**Business** (`BusinessDataService.delete`), one transaction: lock the business row, check the caller
+**Business** (`BusinessDataService.delete`): the configured public demo business (slug
+`insight.demo.business-slug`, even if an operator gave it members) is refused with `409 "The public demo
+business can't be deleted."` (its preview still answers). Then, in one transaction: lock the business row, check the caller
 is still an OWNER, delete every business-scoped table children first
 (`AccountDataQueries.BUSINESS_TABLES`: dashboard refs, revisions, dashboards, chart revisions, charts,
 saved reports, sale items, sales, import batches, products, stores, invitations, memberships, audit

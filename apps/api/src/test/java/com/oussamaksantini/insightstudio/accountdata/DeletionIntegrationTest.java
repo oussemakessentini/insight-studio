@@ -221,6 +221,22 @@ class DeletionIntegrationTest extends PostgresIntegrationTest {
     }
 
     @Test
+    void theConfiguredPublicDemoBusinessCannotBeDeletedEvenWithAnOwner() throws Exception {
+        // insight.demo.business-slug is fieldstone-apparel; an operator gave the demo business an owner.
+        long demo = db.business("Fieldstone Apparel", "fieldstone-apparel", "USD", "America/New_York");
+        TestUser demoOwner = accounts.member("owner@fieldstone.example", demo, Role.OWNER);
+        mvc.perform(get("/api/businesses/" + demo + "/deletion-preview").with(as(demoOwner, demo)))
+                .andExpect(status().isOk());
+        deleteBusiness(demoOwner, demo, TestAccounts.PASSWORD, "Fieldstone Apparel")
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.detail").value("The public demo business can't be deleted."));
+        assertThat(rowsOf(demo).get("businesses")).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM cube_purge_requests", Long.class)).isZero();
+        // Refused before the password check: no failed attempt was counted.
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM rate_limit_hits WHERE bucket LIKE 'sign-in:%'", Long.class)).isZero();
+    }
+
+    @Test
     void wrongPasswordsAreRateLimitedLikePasswordChanges() throws Exception {
         for (int i = 0; i < 5; i++) {
             deleteBusiness(owner, doomed, "wrong " + i, "Doomed Co").andExpect(status().isBadRequest());
