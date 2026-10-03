@@ -19,6 +19,7 @@ export type Route =
   | { name: 'chartEdit'; chartId: number }
   | { name: 'dashboards' }
   | { name: 'dashboardView'; dashboardId: number }
+  | { name: 'dashboardEdit'; dashboardId: number }
   | { name: 'imports' }
   | { name: 'import'; importId: number }
   | { name: 'signIn' }
@@ -111,6 +112,8 @@ export function matchRoute(pathname: string): Route {
   if (path === '/dashboards') return { name: 'dashboards' }
   const dashboard = /^\/dashboards\/(\d+)$/.exec(path)
   if (dashboard) return { name: 'dashboardView', dashboardId: Number(dashboard[1]) }
+  const dashboardEdit = /^\/dashboards\/(\d+)\/edit$/.exec(path)
+  if (dashboardEdit) return { name: 'dashboardEdit', dashboardId: Number(dashboardEdit[1]) }
   if (path === '/imports') return { name: 'imports' }
   const batch = /^\/imports\/(\d+)$/.exec(path)
   if (batch) return { name: 'import', importId: Number(batch[1]) }

@@ -134,6 +134,18 @@ export const ArrowDownIcon = (p: IconProps) => (
   </Icon>
 )
 
+export const ArrowLeftIcon = (p: IconProps) => (
+  <Icon width="14" height="14" strokeWidth="2.2" {...p}>
+    <path d="M19 12H5M11 6l-6 6 6 6" />
+  </Icon>
+)
+
+export const ArrowRightIcon = (p: IconProps) => (
+  <Icon width="14" height="14" strokeWidth="2.2" {...p}>
+    <path d="M5 12h14M13 6l6 6-6 6" />
+  </Icon>
+)
+
 export const AlertIcon = (p: IconProps) => (
   <Icon {...p}>
     <circle cx="12" cy="12" r="9" />
