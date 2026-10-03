@@ -11,6 +11,7 @@ security.js                 checkAuth (HS256 JWT with businessId), queryRewrite 
 model/cubes/orders.yml      orders: one row per receipt with >= 1 line item; daily rollup by business and store
 model/cubes/line_items.yml  line_items: sale items for product/category breakdowns; daily rollup by business, store and category
 model/cubes/order_categories.yml  order_categories: one row per order and category (category report); daily rollup
+model/cubes/order_products.yml    order_products: one row per line item (chart builder); daily rollup by store, product, category
 model/cubes/catalog.yml     businesses, stores, products
 scripts/reconcile.mjs       compares Cube with the API (Node 20+, no dependencies)
 test/security.test.js       unit tests for security.js: node --test services/analytics/test/security.test.js

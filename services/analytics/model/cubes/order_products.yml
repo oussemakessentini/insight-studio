@@ -1,0 +1,119 @@
+# One row per (order, product): a line item of a receipt, with its store, local time, product and
+# category (used by the chart builder, docs/chart-builder-api.md). sale_items has a unique
+# (sale_id, product_id), so counting the rows of a product gives exactly the number of orders
+# containing it; every row belongs to one store, one day and one product, so that count is
+# additive and the daily rollup serves exact per-product order counts for any period and store.
+#
+# Orders across several products or categories (a chart filtered on products or categories, or
+# the distinct order total of a product or category chart) are not additive: `distinct_orders` is
+# an exact COUNT(DISTINCT order_id), which Cube cannot serve from a rollup, so those queries run as
+# one statement on PostgreSQL.
+#
+# Only products of the store's own business count, like the API (Flyway V12 makes any other line
+# item impossible anyway).
+#
+# Freshness marker (docs/cube-reports.md): data_version is read by the same statement as the rows.
+# One marker row per business (order_id, store_id, sold_at, product_id and category NULL; no
+# revenue, units or count) carries it even for a business without sales.
+cubes:
+  - name: order_products
+    title: Order products
+    description: One row per order and product (a line item), with the order's store and time.
+    sql: >
+      SELECT si.sale_id                       AS order_id,
+             st.business_id,
+             s.store_id,
+             s.sold_at,
+             si.product_id,
+             p.category,
+             si.quantity                      AS units,
+             si.quantity * si.unit_price      AS revenue,
+             (SELECT v.version FROM report_data_version v WHERE v.id = 1) AS data_version
+      FROM sale_items si
+      JOIN sales s ON s.id = si.sale_id
+      JOIN stores st ON st.id = s.store_id
+      JOIN products p ON p.id = si.product_id AND p.business_id = st.business_id
+      UNION ALL
+      SELECT NULL, b.id, NULL, NULL, NULL, NULL, NULL, NULL, v.version
+      FROM businesses b
+      CROSS JOIN report_data_version v
+      WHERE v.id = 1
+
+    refresh_key:
+      sql: SELECT version, (SELECT MAX(id) FROM businesses) AS last_business FROM report_data_version WHERE id = 1
+      every: 1 second
+
+    dimensions:
+      - name: business_id
+        description: Business of the order's store. Every query is filtered on it (services/analytics/security.js).
+        sql: business_id
+        type: number
+
+      - name: store_id
+        sql: store_id
+        type: number
+
+      - name: product_id
+        sql: product_id
+        type: number
+
+      - name: category
+        sql: category
+        type: string
+
+      - name: sold_at
+        title: Sold at
+        description: Sale timestamp; day/week/month buckets follow the query's timezone.
+        sql: sold_at
+        type: time
+
+    measures:
+      - name: count
+        title: Orders containing the product
+        description: Line items; per product, the orders containing it (marker rows are not counted).
+        sql: order_id
+        type: count
+
+      - name: distinct_orders
+        title: Orders
+        description: Distinct orders among the rows (exact; not served by a rollup).
+        sql: order_id
+        type: count_distinct
+
+      - name: revenue
+        title: Revenue
+        description: SUM(quantity * unit_price), the prices charged.
+        sql: revenue
+        type: sum
+        format: currency
+
+      - name: units
+        title: Units sold
+        sql: units
+        type: sum
+
+      - name: data_version
+        title: Data version
+        description: report_data_version the rows were read at (docs/cube-reports.md).
+        sql: data_version
+        type: max
+
+    pre_aggregations:
+      # Daily per business, store, product and category; all measures additive (count of line
+      # items) or a max. Not partitioned, for the reasons given in orders.yml.
+      - name: daily_by_store_product
+        measures:
+          - order_products.count
+          - order_products.revenue
+          - order_products.units
+          - order_products.data_version
+        dimensions:
+          - order_products.business_id
+          - order_products.store_id
+          - order_products.product_id
+          - order_products.category
+        time_dimension: order_products.sold_at
+        granularity: day
+        refresh_key:
+          sql: SELECT version, (SELECT MAX(id) FROM businesses) AS last_business FROM report_data_version WHERE id = 1
+          every: 1 second
