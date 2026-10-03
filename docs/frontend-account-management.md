@@ -74,7 +74,8 @@ path's id as `X-Business-Id`; account calls send none. `deleteJson` now accepts 
   - `blockingBusinesses` non-empty: an alert explains last-owner protection, each business has a
     link "Manage members of {name}" (switches to that business and opens `/settings/members`), and
     **Delete account** is disabled.
-  - Otherwise: memberships you leave, authored content that stays, **Your password**, **Type your
+  - Otherwise: memberships you leave, authored content that stays, "N open invitations you sent will
+    be revoked." (when `openInvitationsSent` > 0), **Your password**, **Type your
     email to confirm** (case ignored); **Delete account** is enabled only when both are filled and the
     email matches. On success the session reloads and the app opens `/sign-in?accountDeleted=1`,
     which shows "Your account has been deleted and you have been signed out. …".
