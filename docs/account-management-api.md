@@ -101,7 +101,10 @@ memberships, revoke open invitations sent to its email, delete its reset and ver
 expire its pending emails (`user_id` or recipient = its email), delete **every** session row whose
 `spring_session.principal_name` is `user:{id}` (the principal index the session repository sets), and
 turn the row into a tombstone (`email`, `password_hash`, `email_verified_at`, `last_sign_in_at` `NULL`,
-`display_name` "Deleted account", `deleted_at`, `session_version + 1`). The controller then signs the
+`display_name` "Deleted account", `deleted_at`, `session_version + 1`). The open invitations the
+account **sent** are revoked too (`invitation.revoked` in their business, actor = the account, written
+before it becomes a tombstone) and their pending invitation emails (same business, kind and recipient)
+expire with their bodies erased. The preview reports them as `openInvitationsSent` (an additive field). The controller then signs the
 request out (cookie cleared).
 
 Tombstones everywhere: `UserQueries.findById`, `findByEmail` and `sessionVersion` ignore deleted users,

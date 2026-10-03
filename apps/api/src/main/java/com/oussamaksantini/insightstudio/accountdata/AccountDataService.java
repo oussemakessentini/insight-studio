@@ -155,13 +155,15 @@ public class AccountDataService {
                     memberships.stream().map(m -> new MembershipPreview(m.businessId(), m.businessName(), m.role(),
                             m.memberCount())).toList(),
                     blocking(memberships),
-                    queries.authoredCounts(account.id()));
+                    queries.authoredCounts(account.id()),
+                    queries.countOpenInvitationsSent(account.id()));
         });
     }
 
     /**
      * Deletes the account (contract §4), in one transaction: {@code member.account_deleted} in each of
-     * its businesses and the memberships deleted; open invitations sent to its email revoked; its reset
+     * its businesses and the memberships deleted; the open invitations it sent revoked (with
+     * {@code invitation.revoked} and their pending emails expired); open invitations sent to its email revoked; its reset
      * and verification tokens deleted; its pending emails expired with their bodies erased; every
      * session deleted through the principal index and the session version bumped; the user row turned
      * into a tombstone. 409 while it is the only owner of a business. Needs the password and the email
@@ -185,6 +187,13 @@ public class AccountDataService {
             for (MembershipRow m : memberships) {
                 audit.record(m.businessId(), user.id(), AuditAction.MEMBER_ACCOUNT_DELETED, user.id(),
                         Map.of("role", m.role().name()));
+            }
+            // Invitations it sent would no longer work (their inviter is gone): revoke them, with their
+            // events written while the account still exists, and cancel their emails.
+            for (AccountDataQueries.RevokedInvitation invitation : queries.revokeInvitationsSentBy(user.id())) {
+                audit.record(invitation.businessId(), user.id(), AuditAction.INVITATION_REVOKED, invitation.id(),
+                        Map.of("email", invitation.email(), "role", invitation.role().name()));
+                queries.expireInvitationMail(invitation.businessId(), invitation.email());
             }
             queries.deleteMemberships(user.id());
             queries.revokeInvitationsTo(user.email());
