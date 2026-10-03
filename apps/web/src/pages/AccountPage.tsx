@@ -8,6 +8,7 @@ import { Panel } from '../components/Panel'
 import { ResendVerification } from '../components/VerifyEmailBanner'
 import { useTouched } from '../hooks/useTouched'
 import { useLoadedSession } from '../lib/session'
+import { DeleteAccount, YourData } from '../components/AccountDataPanels'
 import { confirmationError, errorMessage, newPasswordError, PASSWORD_HINT, requiredError } from '../lib/validation'
 import '../styles/accounts.css'
 
@@ -49,7 +50,11 @@ export function AccountPage() {
           <YourBusinesses />
           <SignOutPanel />
         </div>
-        <ChangePassword email={user.email} />
+        <div className="account-column">
+          <ChangePassword email={user.email} />
+          <YourData />
+          <DeleteAccount />
+        </div>
       </div>
     </>
   )
