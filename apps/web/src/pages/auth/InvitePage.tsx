@@ -21,7 +21,7 @@ function takeToken(): string {
   try {
     if (fromUrl) {
       window.sessionStorage.setItem(STORAGE_KEY, fromUrl)
-      window.history.replaceState(null, '', HERE)
+      window.history.replaceState(window.history.state, '', HERE)
       return fromUrl
     }
     return window.sessionStorage.getItem(STORAGE_KEY) ?? ''

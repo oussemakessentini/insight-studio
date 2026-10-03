@@ -117,32 +117,67 @@ export function ChartPanel({ title, subtitle, visualization, data, error, loadin
   )
 }
 
-/** The result drawn as `visualization`, or as its data table. */
-export function ChartBody({ result, visualization, view }: { result: ChartResult; visualization: ChartVisualization; view: 'chart' | 'table' }) {
+const PLOT_HEIGHT = 300
+const PIE_HEIGHT = 240
+/** Room for a caption under a plot ("Dashed segments mark…") and for each result note. */
+const CAPTION_HEIGHT = 30
+const NOTE_HEIGHT = 22
+const MIN_PLOT_HEIGHT = 96
+
+/**
+ * The result drawn as `visualization`, or as its data table. `height` fits the drawing (with its
+ * captions and notes) into that many pixels, e.g. a dashboard widget; without it plots are 300 px.
+ */
+export function ChartBody({
+  result,
+  visualization,
+  view,
+  height,
+}: {
+  result: ChartResult
+  visualization: ChartVisualization
+  view: 'chart' | 'table'
+  height?: number
+}) {
   if (visualization === 'kpi' && view === 'chart') return <KpiTiles result={result} />
   if (isEmpty(result)) return <EmptyState message="No sales match this chart’s dates and filters." />
+  const notes = resultNotes(result)
+  // What is left for the plot once the notes below it are placed.
+  const available = height === undefined ? undefined : height - (notes.length > 0 ? 12 + notes.length * NOTE_HEIGHT : 0)
   return (
     <>
       {view === 'table' || visualization === 'table' ? (
         <ChartTable result={result} />
       ) : visualization === 'line' ? (
-        <LineView result={result} />
+        <LineView result={result} height={available} />
       ) : visualization === 'bar' ? (
         result.groupBy === 'time' ? (
-          <TimeBarView result={result} />
+          <TimeBarView result={result} height={available} />
         ) : (
           <GroupBarView result={result} />
         )
       ) : (
-        <PieView result={result} />
+        <PieView result={result} height={available} />
       )}
-      <ResultNotes result={result} />
+      {notes.length > 0 && (
+        <ul className="chart-notes">
+          {notes.map((note) => (
+            <li key={note}>{note}</li>
+          ))}
+        </ul>
+      )}
     </>
   )
 }
 
+/** A plot's height: 300 px, or what `available` leaves once a caption (if any) is placed. */
+function plotHeight(available: number | undefined, hasCaption: boolean, fallback = PLOT_HEIGHT): number {
+  if (available === undefined) return fallback
+  return Math.max(MIN_PLOT_HEIGHT, available - (hasCaption ? CAPTION_HEIGHT : 0))
+}
+
 /** Truncation, overlapping orders and partial buckets: what the reader needs to read it right. */
-function ResultNotes({ result }: { result: ChartResult }) {
+function resultNotes(result: ChartResult): string[] {
   const notes: string[] = []
   const groupNoun = (GROUP_BY_LABELS[result.groupBy] ?? 'group').toLowerCase()
   const first = metricColumns(result)[0]
@@ -154,14 +189,7 @@ function ResultNotes({ result }: { result: ChartResult }) {
   if ((result.groupBy === 'product' || result.groupBy === 'category') && metricColumns(result).some((m) => m.key === 'orders')) {
     notes.push(`An order with several ${plural(groupNoun, 2)} counts once in each, so orders by ${groupNoun} don’t add up to the total.`)
   }
-  if (notes.length === 0) return null
-  return (
-    <ul className="chart-notes">
-      {notes.map((note) => (
-        <li key={note}>{note}</li>
-      ))}
-    </ul>
-  )
+  return notes
 }
 
 function plural(noun: string, count: number): string {
@@ -209,14 +237,14 @@ function seriesRows(result: ChartResult, metric: ChartMetric): SeriesRow[] {
   })
 }
 
-function LineView({ result }: { result: ChartResult }) {
+function LineView({ result, height }: { result: ChartResult; height?: number }) {
   const metric = metricColumns(result)[0]
   const granularity = result.granularity ?? 'day'
   const rows = seriesRows(result, metric.key)
   const hasPartial = rows.some((r) => r.partial)
   return (
     <div className="chart-frame">
-      <ResponsiveContainer width="100%" height={300}>
+      <ResponsiveContainer width="100%" height={plotHeight(height, hasPartial)}>
         <ComposedChart data={rows} margin={{ top: 8, right: 12, bottom: 0, left: 0 }} accessibilityLayer>
           <CartesianGrid vertical={false} stroke={GRID} strokeWidth={1} />
           <XAxis
@@ -318,14 +346,14 @@ function ValueAxis({ unit, currency, ...rest }: { unit: MetricUnit; currency: st
 // ---- Bars --------------------------------------------------------------------------------------
 
 /** Columns over time; partial buckets are drawn lighter (and said so). */
-function TimeBarView({ result }: { result: ChartResult }) {
+function TimeBarView({ result, height }: { result: ChartResult; height?: number }) {
   const metric = metricColumns(result)[0]
   const granularity = result.granularity ?? 'day'
   const rows = result.rows.map((row) => ({ ...row, value: row.values[metric.key] ?? 0 }))
   const hasPartial = rows.some((r) => r.partial)
   return (
     <div className="chart-frame">
-      <ResponsiveContainer width="100%" height={300}>
+      <ResponsiveContainer width="100%" height={plotHeight(height, hasPartial)}>
         <BarChart data={rows} margin={{ top: 8, right: 12, bottom: 0, left: 0 }} barCategoryGap={2} accessibilityLayer>
           <CartesianGrid vertical={false} stroke={GRID} strokeWidth={1} />
           <XAxis
@@ -447,14 +475,14 @@ function pieSlices(result: ChartResult, metric: ChartMetric): { slices: Slice[];
   return { slices, total }
 }
 
-function PieView({ result }: { result: ChartResult }) {
+function PieView({ result, height }: { result: ChartResult; height?: number }) {
   const metric = metricColumns(result)[0]
   const { slices, total } = pieSlices(result, metric.key)
   const share = (value: number) => (total > 0 ? formatPercent((value / total) * 100) : '—')
   return (
     <div className="chart-pie">
       <div className="chart-pie-plot">
-        <ResponsiveContainer width="100%" height={240}>
+        <ResponsiveContainer width="100%" height={Math.min(PIE_HEIGHT, plotHeight(height, false, PIE_HEIGHT))}>
           <PieChart accessibilityLayer>
             <Pie
               data={slices}

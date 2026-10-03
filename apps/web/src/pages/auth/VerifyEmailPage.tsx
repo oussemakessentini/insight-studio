@@ -16,7 +16,7 @@ function takeToken(): string {
   const fromUrl = new URLSearchParams(window.location.search).get('token')
   if (fromUrl) {
     linkToken = fromUrl
-    window.history.replaceState(null, '', '/verify-email')
+    window.history.replaceState(window.history.state, '', '/verify-email')
   }
   return linkToken
 }

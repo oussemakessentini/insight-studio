@@ -425,3 +425,26 @@
   }
 }
 
+
+/* ---------- Charts: dashboards that show a chart (before deleting it) ---- */
+
+.chart-delete-usage {
+  background: #fff8ec;
+  border: 1px solid #f5d9a8;
+  color: #6b3a00;
+}
+
+.chart-usage {
+  font-size: 13px;
+}
+
+.chart-usage-warning {
+  font-weight: 600;
+  color: #8a4b00;
+}
+
+/* In a table row's delete confirmation: its own line above the buttons. */
+.saved-row-actions .chart-usage {
+  flex-basis: 100%;
+  text-align: right;
+}

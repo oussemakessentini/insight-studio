@@ -2,6 +2,7 @@
 // (visualization, metrics, grouping, dates, filters) stored with revisions; running it answers a
 // ChartResult computed for its dates resolved today in the business time zone.
 import { deleteJson, getJson, postJson, putJson } from './client'
+import type { DashboardRef } from './dashboards'
 import type { RelativePreset } from './savedReports'
 import type { DateRange, Granularity } from './types'
 
@@ -202,6 +203,9 @@ export const chartsApi = {
 
   revision: (id: number, revision: number, signal?: AbortSignal) =>
     getJson<ChartRevision>(`${base}/${id}/revisions/${revision}`, {}, signal),
+
+  /** Dashboards whose current layout shows this chart (to warn before deleting it). */
+  dashboards: (id: number, signal?: AbortSignal) => getJson<DashboardRef[]>(`${base}/${id}/dashboards`, {}, signal),
 
   /** Runs the current revision, or an older one. */
   data: (id: number, revision: number | null = null, signal?: AbortSignal) =>
