@@ -48,6 +48,16 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
         return body;
     }
 
+    /** A save based on an outdated revision: who saved since, and which revision is current. */
+    @ExceptionHandler(StaleRevisionException.class)
+    ProblemDetail handleStaleRevision(StaleRevisionException ex) {
+        ProblemDetail body = ProblemDetail.forStatusAndDetail(ex.getStatus(), ex.getMessage());
+        body.setProperty("currentRevision", ex.getCurrentRevision());
+        body.setProperty("updatedBy", ex.getUpdatedBy());
+        body.setProperty("updatedAt", ex.getUpdatedAt());
+        return body;
+    }
+
     @ExceptionHandler(ApiException.class)
     ProblemDetail handleApiException(ApiException ex) {
         return ProblemDetail.forStatusAndDetail(ex.getStatus(), ex.getMessage());
