@@ -462,6 +462,190 @@ class CubeReportsIntegrationTest {
         }
     }
 
+    // ---------------------------------------------------------------- chart builder
+
+    /** A saved chart with {@code "engine": "cube"} (New York), for the failure tests below. */
+    private long cubeChart;
+
+    /**
+     * Charts with {@code "engine": "cube"} equal the same definitions with {@code "engine": "sql"} (both
+     * run by the instance that has Cube): every grouping, with and without store, category and product
+     * filters, around the DST changes, over all data and without sales, for two time zones.
+     */
+    @Test
+    @Order(7)
+    void cubeChartsEqualSqlChartsForEveryGroupingAndFilter() throws Exception {
+        HttpResponse<String> catalog = newYork.cube().get("/api/charts/catalog");
+        assertThat(JsonPath.<List<String>>read(catalog.body(), "$.engines")).containsExactly("sql", "cube");
+        assertThat(JsonPath.<List<String>>read(newYork.sql().get("/api/charts/catalog").body(), "$.engines"))
+                .containsExactly("sql");
+
+        List<String[]> groupings = List.of(new String[] {"none", null}, new String[] {"time", "day"},
+                new String[] {"time", "week"}, new String[] {"time", "month"}, new String[] {"store", null},
+                new String[] {"product", null}, new String[] {"category", null});
+        List<Window> windows = List.of(WINDOWS.get(0), WINDOWS.get(2), WINDOWS.get(5), WINDOWS.getLast());
+        SoftAssertions softly = new SoftAssertions();
+        int compared = 0;
+        for (Biz biz : List.of(newYork, paris)) {
+            long store = biz.stores().getFirst();
+            String category = jdbc.queryForObject(
+                    "SELECT category FROM products WHERE business_id = ? ORDER BY id LIMIT 1", String.class, biz.id());
+            List<Long> products = jdbc.queryForList(
+                    "SELECT id FROM products WHERE business_id = ? ORDER BY id LIMIT 2", Long.class, biz.id());
+            List<String> filterSets = List.of(
+                    "{}",
+                    "{\"storeIds\": [%d]}".formatted(store),
+                    "{\"categories\": [\"%s\"]}".formatted(category),
+                    "{\"storeIds\": [%d], \"productIds\": [%d, %d]}".formatted(store, products.get(0), products.get(1)));
+            for (Window window : windows) {
+                for (String[] grouping : groupings) {
+                    long days = ChronoUnit.DAYS.between(LocalDate.parse(window.from()), LocalDate.parse(window.to())) + 1;
+                    if ("day".equals(grouping[1]) && days > 366) {
+                        continue;
+                    }
+                    for (String filters : filterSets) {
+                        String label = "%s %s %s %s %s".formatted(biz.name(), window.name(), grouping[0], grouping[1], filters);
+                        JsonNode sql = chartPreview(biz.cube(), chart(grouping[0], grouping[1], window, filters, "sql"), "sql");
+                        JsonNode cube = chartPreview(biz.cube(), chart(grouping[0], grouping[1], window, filters, "cube"), "cube");
+                        softly.assertThat(withoutRunDetails(cube)).as(label).isEqualTo(withoutRunDetails(sql));
+                        compared++;
+                    }
+                }
+            }
+        }
+        softly.assertAll();
+        assertThat(compared).isGreaterThan(150);
+
+        // A saved cube chart runs on Cube too.
+        HttpResponse<String> created = newYork.cube().postJson("/api/charts",
+                chart("time", "month", WINDOWS.getFirst(), "{}", "cube").replace("\"Check\"", "\"On Cube\""));
+        assertThat(created.statusCode()).as(created.body()).isEqualTo(201);
+        cubeChart = ((Number) JsonPath.read(created.body(), "$.id")).longValue();
+        HttpResponse<String> data = newYork.cube().get("/api/charts/" + cubeChart + "/data");
+        assertThat(data.statusCode()).as(data.body()).isEqualTo(200);
+        assertThat(data.headers().firstValue("X-Report-Engine")).hasValue("cube");
+        // The Cube-less instance refuses to run it, explaining why.
+        HttpResponse<String> withoutCube = newYork.sql().get("/api/charts/" + cubeChart + "/data");
+        assertThat(withoutCube.statusCode()).isEqualTo(400);
+        assertThat((String) JsonPath.read(withoutCube.body(), "$.errors[0].field")).isEqualTo("engine");
+    }
+
+    @Test
+    @Order(7)
+    void cubeChartsIncludeEveryCommittedChange() throws Exception {
+        long store = newYork.stores().get(1);
+        Window window = new Window("June", "2026-06-01", "2026-06-30");
+        List<String> definitions = List.of(
+                chart("product", null, window, "{}", "cube"),
+                chart("category", null, window, "{\"storeIds\": [%d]}".formatted(store), "cube"),
+                chart("time", "day", window, "{\"categories\": [\"Tops\"]}", "cube"),
+                chart("store", null, window, "{\"productIds\": [%d]}".formatted(newYorkTops), "cube"));
+        SqlFixture db = new SqlFixture(jdbc);
+        for (int i = 0; i < 3; i++) {
+            db.sale(store, "CHART-LIVE-" + i, "2026-06-2%dT03:30:00Z".formatted(i), newYorkTops, 2 + i, "17.%d5".formatted(i));
+            for (String definition : definitions) {
+                JsonNode cube = chartPreview(newYork.cube(), definition, "cube");
+                JsonNode sql = chartPreview(newYork.cube(), definition.replace("\"engine\": \"cube\"", "\"engine\": \"sql\""), "sql");
+                assertThat(withoutRunDetails(cube)).as(definition).isEqualTo(withoutRunDetails(sql));
+            }
+        }
+        JsonNode products = chartPreview(newYork.cube(), definitions.getFirst(), "cube");
+        assertThat(products.toString()).contains("\"label\":\"Tee\"");
+    }
+
+    @Test
+    @Order(8)
+    void staleCubeChartsAreA503AndNeverShown() throws Exception {
+        for (String path : List.of("/api/charts/preview")) {
+            HttpResponse<String> response = newYorkStale.postJson(path,
+                    chart("time", "month", new Window("", "2026-03-20", "2026-06-10"), "{}", "cube"));
+            assertUnavailable(response(response), path,
+                    "Report figures are being updated after recent changes. Try again in a few seconds.", "5");
+        }
+    }
+
+    /** A table chart (all metrics the grouping allows, every group) as JSON. */
+    private static String chart(String groupBy, String granularity, Window window, String filters, String engine) {
+        boolean byItem = groupBy.equals("product") || groupBy.equals("category");
+        boolean ranked = byItem || groupBy.equals("store");
+        return """
+                {"title": "Check", "visualization": "table",
+                 "metrics": %s, "groupBy": "%s", "granularity": %s,
+                 "range": {"type": "fixed", "from": "%s", "to": "%s"}, "filters": %s, "limit": %s, "engine": "%s"}
+                """.formatted(byItem ? "[\"revenue\", \"orders\", \"units\"]"
+                        : "[\"revenue\", \"orders\", \"units\", \"average_order_value\"]",
+                groupBy, granularity == null ? "null" : "\"" + granularity + "\"",
+                window.from() == null ? DATA_FROM : window.from(), window.to() == null ? DATA_TO : window.to(),
+                filters, ranked ? "50" : "null", engine);
+    }
+
+    /** A preview, asked again while the API answers 503 (Cube building or catching up), for at most two minutes. */
+    private static JsonNode chartPreview(HttpApiClient client, String definition, String engine) throws Exception {
+        Instant giveUp = Instant.now().plusSeconds(120);
+        while (true) {
+            HttpResponse<String> response = client.postJson("/api/charts/preview", definition);
+            if (response.statusCode() == 200) {
+                assertThat(response.headers().firstValue("X-Report-Engine")).hasValue(engine);
+                return JSON.readTree(response.body());
+            }
+            assertThat(response.statusCode()).as(response.body()).isEqualTo(503);
+            assertThat(Instant.now()).as("chart figures within two minutes: " + response.body()).isBefore(giveUp);
+            Thread.sleep(1000);
+        }
+    }
+
+    /** The result without what differs between runs: the engine and the time it was generated. */
+    private static JsonNode withoutRunDetails(JsonNode result) {
+        tools.jackson.databind.node.ObjectNode copy = ((tools.jackson.databind.node.ObjectNode) result).deepCopy();
+        copy.remove("engine");
+        copy.remove("generatedAt");
+        return copy;
+    }
+
+    private static HttpResponse<byte[]> response(HttpResponse<String> response) {
+        return new HttpResponse<>() {
+            @Override
+            public int statusCode() {
+                return response.statusCode();
+            }
+
+            @Override
+            public java.net.http.HttpRequest request() {
+                return response.request();
+            }
+
+            @Override
+            public java.util.Optional<HttpResponse<byte[]>> previousResponse() {
+                return java.util.Optional.empty();
+            }
+
+            @Override
+            public java.net.http.HttpHeaders headers() {
+                return response.headers();
+            }
+
+            @Override
+            public byte[] body() {
+                return response.body().getBytes(StandardCharsets.UTF_8);
+            }
+
+            @Override
+            public java.util.Optional<javax.net.ssl.SSLSession> sslSession() {
+                return response.sslSession();
+            }
+
+            @Override
+            public java.net.URI uri() {
+                return response.uri();
+            }
+
+            @Override
+            public java.net.http.HttpClient.Version version() {
+                return response.version();
+            }
+        };
+    }
+
     // ---------------------------------------------------------------- failures
 
     @Test
@@ -497,6 +681,22 @@ class CubeReportsIntegrationTest {
         }
         // The SQL engine is unaffected; there is no fallback from one engine to the other.
         assertThat(newYork.sql().get("/api/reports/monthly").statusCode()).isEqualTo(200);
+    }
+
+    @Test
+    @Order(10)
+    void whenCubeIsDownCubeChartsAreA503AndSqlChartsStillWork() throws Exception {
+        // Cube was stopped by the previous test.
+        Window window = WINDOWS.getFirst();
+        for (String groupBy : List.of("none", "product", "category")) {
+            assertUnavailable(response(newYork.cube().postJson("/api/charts/preview", chart(groupBy, null, window, "{}", "cube"))),
+                    "preview by " + groupBy, "Report figures are temporarily unavailable. Try again in a minute.", "60");
+        }
+        assertUnavailable(response(newYork.cube().get("/api/charts/" + cubeChart + "/data")), "saved cube chart",
+                "Report figures are temporarily unavailable. Try again in a minute.", "60");
+        HttpResponse<String> sql = newYork.cube().postJson("/api/charts/preview", chart("store", null, window, "{}", "sql"));
+        assertThat(sql.statusCode()).isEqualTo(200);
+        assertThat(sql.headers().firstValue("X-Report-Engine")).hasValue("sql");
     }
 
     private static void assertUnavailable(HttpResponse<byte[]> response, String path, String detail, String retryAfter) {
