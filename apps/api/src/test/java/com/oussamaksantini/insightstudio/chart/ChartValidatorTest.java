@@ -67,7 +67,7 @@ class ChartValidatorTest {
         }
     };
 
-    private final ChartEngines sqlOnly = new ChartEngines(null, new ChartProperties(Duration.ofSeconds(10)),
+    private final ChartEngines sqlOnly = new ChartEngines(null, new ChartProperties(Duration.ofSeconds(10), 6),
             new ReportProperties(ReportProperties.Engine.SQL, Duration.ofSeconds(10)),
             new StaticListableBeanFactory().getBeanProvider(CubeClient.class));
     /** Today is 2026-10-02 in UTC. */
