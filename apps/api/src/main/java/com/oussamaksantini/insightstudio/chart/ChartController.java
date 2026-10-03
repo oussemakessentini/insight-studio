@@ -5,6 +5,8 @@ import com.oussamaksantini.insightstudio.chart.dto.ChartResponse;
 import com.oussamaksantini.insightstudio.chart.dto.ChartResult;
 import com.oussamaksantini.insightstudio.chart.dto.ChartRevisionResponse;
 import com.oussamaksantini.insightstudio.chart.dto.ChartSummaryResponse;
+import com.oussamaksantini.insightstudio.tenancy.CurrentBusiness;
+import com.oussamaksantini.insightstudio.tenancy.Role;
 import jakarta.servlet.http.HttpServletResponse;
 import java.util.List;
 import java.util.function.Consumer;
@@ -26,6 +28,10 @@ import tools.jackson.databind.JsonNode;
  * The chart builder's API (docs/chart-builder-contract.md §4, docs/chart-builder-api.md). Members read
  * and run charts; ADMIN and OWNER preview and save them. Not served for the public demo (anonymous
  * callers get a 401 from the security rules).
+ *
+ * <p>Runs ({@code preview} and {@code data}) hold one of the business's run slots ({@link ChartRunLimiter})
+ * for as long as they take; the slot is taken here, after the caller's access is checked and before the
+ * service opens its transaction, so a refused run never touches the database.
  */
 @RestController
 @RequestMapping("/api/charts")
@@ -35,9 +41,13 @@ class ChartController {
     static final String ENGINE_HEADER = "X-Report-Engine";
 
     private final ChartService charts;
+    private final CurrentBusiness current;
+    private final ChartRunLimiter limiter;
 
-    ChartController(ChartService charts) {
+    ChartController(ChartService charts, CurrentBusiness current, ChartRunLimiter limiter) {
         this.charts = charts;
+        this.current = current;
+        this.limiter = limiter;
     }
 
     @GetMapping("/catalog")
@@ -47,7 +57,9 @@ class ChartController {
 
     @PostMapping("/preview")
     ChartResult preview(@RequestBody(required = false) JsonNode body, HttpServletResponse response) {
-        return charts.preview(body, engineHeader(response));
+        try (ChartRunLimiter.Permit permit = limiter.acquire(current.require(Role.ADMIN).businessId())) {
+            return charts.preview(body, engineHeader(response));
+        }
     }
 
     @GetMapping
@@ -94,7 +106,9 @@ class ChartController {
     @GetMapping("/{id}/data")
     ChartResult data(
             @PathVariable long id, @RequestParam(required = false) Integer revision, HttpServletResponse response) {
-        return charts.data(id, revision, engineHeader(response));
+        try (ChartRunLimiter.Permit permit = limiter.acquire(current.require().businessId())) {
+            return charts.data(id, revision, engineHeader(response));
+        }
     }
 
     private static Consumer<String> engineHeader(HttpServletResponse response) {
