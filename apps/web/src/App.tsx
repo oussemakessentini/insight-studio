@@ -13,6 +13,7 @@ import { useApi } from './hooks/useApi'
 import { useSessionLoader } from './hooks/useSessionLoader'
 import { useStateResetOn } from './hooks/useStateResetOn'
 import { filterQuery, filtersFromUrl, withFilters, type Filters } from './lib/filters'
+import { chartPermissions } from './lib/charts'
 import { savedReportPermissions } from './lib/savedReports'
 import {
   currentLocation,
@@ -43,6 +44,9 @@ import { ResetPasswordPage } from './pages/auth/ResetPasswordPage'
 import { SignInPage } from './pages/auth/SignInPage'
 import { SignUpPage } from './pages/auth/SignUpPage'
 import { CatalogPage } from './pages/CatalogPage'
+import { ChartBuilderPage } from './pages/ChartBuilderPage'
+import { ChartPage } from './pages/ChartPage'
+import { ChartsPage, ChartsSignIn } from './pages/ChartsPage'
 import { DashboardPage } from './pages/DashboardPage'
 import { ImportDetailPage } from './pages/ImportDetailPage'
 import { ImportsPage } from './pages/ImportsPage'
@@ -218,6 +222,8 @@ function Workspace({
   const noAccess = <NoAccess access={access} businessName={context.business.name} homeHref={href('/')} />
   // Saved reports belong to members; the public demo gets a sign-in prompt instead.
   const savedReportsAvailable = savedReportPermissions(access).available
+  // Charts too: members only; building them is for verified owners and admins.
+  const charts = chartPermissions(access)
 
   return (
     <Shell
@@ -243,7 +249,22 @@ function Workspace({
         ) : (
           <SavedReportsSignIn />
         ))}
+      {route.name === 'charts' && (charts.available ? <ChartsPage {...pageProps} /> : <ChartsSignIn />)}
+      {route.name === 'chart' &&
+        (charts.available ? <ChartPage key={route.chartId} chartId={route.chartId} {...pageProps} /> : <ChartsSignIn />)}
       {/* Role-gated pages: hidden as a convenience; the API refuses these actions regardless. */}
+      {(route.name === 'chartNew' || route.name === 'chartEdit') &&
+        (!charts.available ? (
+          <ChartsSignIn />
+        ) : charts.canManage ? (
+          <ChartBuilderPage
+            key={route.name === 'chartEdit' ? route.chartId : 'new'}
+            chartId={route.name === 'chartEdit' ? route.chartId : null}
+            {...pageProps}
+          />
+        ) : (
+          noAccess
+        ))}
       {route.name === 'imports' && (access.canImport ? <ImportsPage {...pageProps} /> : noAccess)}
       {route.name === 'import' &&
         (access.canImport ? <ImportDetailPage key={route.importId} importId={route.importId} {...pageProps} /> : noAccess)}
@@ -280,6 +301,11 @@ function sectionOf(route: Route): Section | null {
     case 'savedReports':
     case 'savedReport':
       return 'reports'
+    case 'charts':
+    case 'chartNew':
+    case 'chart':
+    case 'chartEdit':
+      return 'charts'
     case 'imports':
     case 'import':
       return 'imports'
@@ -303,6 +329,7 @@ function sectionHrefs(href: (path: string) => string): Record<Section, string> {
     sales: href('/sales'),
     stores: href('/stores'),
     reports: href('/reports'),
+    charts: href('/charts'),
     imports: href('/imports'),
     members: href('/settings/members'),
     catalog: href('/settings/catalog'),
