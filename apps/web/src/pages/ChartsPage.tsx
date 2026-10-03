@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { chartsApi, type ChartSummary } from '../api/charts'
+import { ChartUsage } from '../components/charts/ChartUsage'
 import { FormError, FormSuccess } from '../components/Form'
 import { Link } from '../components/Link'
 import { PageHeader } from '../components/PageHeader'
@@ -220,6 +221,7 @@ function ChartTable({ charts, canManage, timeZone, href, onDuplicated, onDeleted
                   <td className="num">
                     {confirming === chart.id ? (
                       <span className="confirm-inline saved-row-actions" role="group" aria-label={`Delete ${chart.title}?`}>
+                        <ChartUsage chartId={chart.id} href={href} compact />
                         <button
                           type="button"
                           className="button button-danger button-small"

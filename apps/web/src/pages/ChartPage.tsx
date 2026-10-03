@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { ApiError } from '../api/client'
 import { chartsApi, type Chart, type ChartDefinition, type ChartResult, type ChartRevisionSummary } from '../api/charts'
 import type { StoreOption } from '../api/types'
+import { ChartUsage } from '../components/charts/ChartUsage'
 import { ChartPanel } from '../components/charts/ChartView'
 import { FormError } from '../components/Form'
 import { Link } from '../components/Link'
@@ -145,6 +146,13 @@ export function ChartPage({ chartId, context, href }: PageProps & { chartId: num
 
       {can.needsVerification && <VerifyToManageCharts />}
       {error && <FormError>{error}</FormError>}
+      {confirmingDelete && current && (
+        <div className="form-alert chart-delete-usage" role="status">
+          <div>
+            <strong>Before you delete it:</strong> <ChartUsage chartId={chartId} href={href} />
+          </div>
+        </div>
+      )}
 
       {older !== null && current && (
         <div className="form-alert chart-revision-note" role="note">
