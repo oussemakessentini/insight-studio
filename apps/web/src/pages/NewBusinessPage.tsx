@@ -4,30 +4,10 @@ import { FormError, SelectField, SubmitButton, TextField } from '../components/F
 import { Link } from '../components/Link'
 import { ResendVerification } from '../components/VerifyEmailBanner'
 import { useTouched } from '../hooks/useTouched'
+import { currencyOptions } from '../lib/accountSettings'
 import { useLoadedSession } from '../lib/session'
 import { errorMessage, requiredError } from '../lib/validation'
 import '../styles/accounts.css'
-
-const FALLBACK_CURRENCIES = ['USD', 'EUR', 'GBP', 'CAD', 'AUD', 'CHF', 'JPY', 'TND', 'MAD']
-
-function currencyOptions(): { code: string; label: string }[] {
-  let codes: string[]
-  try {
-    codes = Intl.supportedValuesOf('currency')
-  } catch {
-    codes = FALLBACK_CURRENCIES
-  }
-  let names: Intl.DisplayNames | null = null
-  try {
-    names = new Intl.DisplayNames(['en'], { type: 'currency' })
-  } catch {
-    // Codes only.
-  }
-  return codes.map((code) => {
-    const name = names?.of(code)
-    return { code, label: name && name !== code ? `${code} · ${name}` : code }
-  })
-}
 
 function localTimeZone(): string {
   try {

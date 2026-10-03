@@ -153,16 +153,23 @@ export function putJson<T = void>(path: string, body: unknown, options: RequestO
   return request<T>(path, 'PUT', JSON.stringify(body), options)
 }
 
-export function deleteJson<T = void>(path: string, options: RequestOptions = {}): Promise<T> {
-  return request<T>(path, 'DELETE', undefined, options)
+/** DELETE, optionally with a JSON body (e.g. a password and typed confirmation for deletions). */
+export function deleteJson<T = void>(path: string, options: RequestOptions & { body?: unknown } = {}): Promise<T> {
+  const { body, ...rest } = options
+  return request<T>(path, 'DELETE', body === undefined ? undefined : JSON.stringify(body), rest)
 }
 
 /**
  * Downloads a file (e.g. a CSV export) with fetch, so it carries the business header a plain link
  * can't, then hands it to the browser as a download.
  */
-export async function downloadFile(path: string, fallbackName: string, signal?: AbortSignal): Promise<void> {
-  await saveDownload(await send(path, 'GET', undefined, { signal }, '*/*'), fallbackName)
+export async function downloadFile(
+  path: string,
+  fallbackName: string,
+  signal?: AbortSignal,
+  options: Omit<RequestOptions, 'signal'> = {},
+): Promise<void> {
+  await saveDownload(await send(path, 'GET', undefined, { ...options, signal }, '*/*'), fallbackName)
 }
 
 /**
