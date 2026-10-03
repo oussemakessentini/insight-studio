@@ -130,6 +130,47 @@ test('order_categories (category report) is scoped on its own business_id', asyn
     { member: 'order_categories.sold_at', operator: 'notSet' }] }, 'the OR is kept whole and ANDed with the scope');
 });
 
+test('order_products (chart builder) is scoped on its own business_id, including the OR form', async () => {
+  const ctx = { securityContext: { businessId: 7 } };
+  const byProduct = await security.queryRewrite({
+    measures: ['order_products.count', 'order_products.revenue', 'order_products.units', 'order_products.data_version'],
+    dimensions: ['order_products.product_id'],
+    timeDimensions: [{ dimension: 'order_products.sold_at', dateRange: ['2026-06-01', '2026-06-30'] }],
+    filters: [
+      { member: 'order_products.store_id', operator: 'equals', values: ['3', '4'] },
+      { member: 'order_products.category', operator: 'equals', values: ['Tops'] },
+    ],
+  }, ctx);
+  assert.deepEqual(byProduct.filters.at(-1), { member: 'order_products.business_id', operator: 'equals', values: ['7'] });
+  assert.equal(byProduct.filters.length, 3);
+
+  // Distinct orders of filtered items, with the marker rows in an OR (runs on PostgreSQL).
+  const distinct = await security.queryRewrite({
+    measures: ['order_products.distinct_orders', 'order_products.data_version'],
+    timeDimensions: [{ dimension: 'order_products.sold_at', granularity: 'week' }],
+    filters: [{ or: [
+      { and: [{ member: 'order_products.sold_at', operator: 'inDateRange', values: ['2026-06-01', '2026-06-30'] },
+        { member: 'order_products.product_id', operator: 'equals', values: ['12'] }] },
+      { member: 'order_products.sold_at', operator: 'notSet' }] }],
+  }, ctx);
+  assert.deepEqual(distinct.filters.slice(1), [{ member: 'order_products.business_id', operator: 'equals', values: ['7'] }]);
+
+  // A query mixing cubes gets one scope filter per cube.
+  const mixed = await security.queryRewrite({ measures: ['order_products.revenue', 'orders.count'] }, ctx);
+  assert.deepEqual(mixed.filters.map((f) => f.member).sort(), ['order_products.business_id', 'orders.business_id']);
+});
+
+test('order_products cannot be widened to another business by a filter', async () => {
+  const out = await security.queryRewrite({
+    measures: ['order_products.revenue'],
+    filters: [{ or: [{ member: 'order_products.business_id', operator: 'equals', values: ['8'] },
+      { member: 'order_products.sold_at', operator: 'notSet' }] }],
+  }, { securityContext: { businessId: 7 } });
+  // The caller's OR is kept, and the mandatory business filter is ANDed next to it.
+  assert.equal(out.filters.length, 2);
+  assert.deepEqual(out.filters[1], { member: 'order_products.business_id', operator: 'equals', values: ['7'] });
+});
+
 test('every cube of the model has a scope member', () => {
   const fs = require('node:fs');
   const path = require('node:path');

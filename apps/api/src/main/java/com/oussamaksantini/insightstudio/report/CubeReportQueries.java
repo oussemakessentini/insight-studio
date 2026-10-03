@@ -38,7 +38,7 @@ final class CubeReportQueries {
     static final String CATEGORY_VERSION = "order_categories.data_version";
 
     /** Row limit sent with every query; an answer with this many rows is treated as invalid. */
-    static final int ROW_LIMIT = 10_000;
+    static final int ROW_LIMIT = CubeFreshness.ROW_LIMIT;
 
     private static final String ORDERS_SOLD_AT = "orders.sold_at";
     private static final String CATEGORY_SOLD_AT = "order_categories.sold_at";
