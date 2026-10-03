@@ -28,8 +28,10 @@ ReportController / SavedReportController
                               change vs previous month, averages, shares, rounding (ReportCalculations)
        -> ReportEngine        raw totals only: monthly(filter), categories(filter)
             SqlReportEngine   the former ReportQueries (one SQL statement per report)
-            CubeReportEngine  Cube REST /load, freshness check, deadline, 503s
+            CubeReportEngine  Cube REST /load
                 CubeReportQueries   the Cube queries
+                CubeFreshness       freshness check, deadline, must-revalidate retries, 503s
+                                    (shared with chart.CubeChartEngine, docs/chart-builder-api.md)
                 analytics.CubeClient.send   one /load call with a fresh 60 s token
 ```
 
