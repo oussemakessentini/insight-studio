@@ -132,6 +132,8 @@ export interface ProblemDetail {
   title?: string
   status?: number
   detail?: string
+  /** Validation errors of a request body (e.g. chart definitions), when the server lists them. */
+  errors?: { field: string; message: string }[]
 }
 
 // ---- Products (apps/api product.dto) ----

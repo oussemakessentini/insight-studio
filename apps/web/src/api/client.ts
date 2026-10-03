@@ -19,15 +19,24 @@ import type {
 
 export class ApiError extends Error {
   readonly status: number
-  /** Seconds to wait before retrying, from a `Retry-After` header (429). */
+  /** Seconds to wait before retrying, from a `Retry-After` header (429, 503). */
   readonly retryAfterSeconds: number | null
+  /** Per-field validation errors of a 400 problem detail (`errors: [{field, message}]`), if any. */
+  readonly fieldErrors: FieldError[]
 
-  constructor(status: number, message: string, retryAfterSeconds: number | null = null) {
+  constructor(status: number, message: string, retryAfterSeconds: number | null = null, fieldErrors: FieldError[] = []) {
     super(message)
     this.name = 'ApiError'
     this.status = status
     this.retryAfterSeconds = retryAfterSeconds
+    this.fieldErrors = fieldErrors
   }
+}
+
+/** One rejected field of a request body; `field` is a JSON path such as `metrics` or `range.from`. */
+export interface FieldError {
+  field: string
+  message: string
 }
 
 /** Query parameters; null, undefined and empty strings are omitted. */
@@ -215,8 +224,13 @@ async function send(
 async function errorFrom(response: Response, options: RequestOptions): Promise<ApiError> {
   const { status } = response
   let detail: string | undefined
+  let fieldErrors: FieldError[] = []
   try {
-    detail = ((await response.json()) as ProblemDetail).detail
+    const problem = (await response.json()) as ProblemDetail
+    detail = problem.detail
+    if (Array.isArray(problem.errors)) {
+      fieldErrors = problem.errors.filter((e) => typeof e?.field === 'string' && typeof e?.message === 'string')
+    }
   } catch {
     // Not a problem-detail body (e.g. the dev proxy could not connect).
   }
@@ -233,7 +247,7 @@ async function errorFrom(response: Response, options: RequestOptions): Promise<A
     // user to the sign-in page.
     window.dispatchEvent(new Event(UNAUTHORIZED_EVENT))
   }
-  return new ApiError(status, message, Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : null)
+  return new ApiError(status, message, Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : null, fieldErrors)
 }
 
 export interface DashboardFilter {
