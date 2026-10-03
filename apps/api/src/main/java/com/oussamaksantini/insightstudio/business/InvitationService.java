@@ -4,6 +4,8 @@ import com.oussamaksantini.insightstudio.account.AccountPrincipal;
 import com.oussamaksantini.insightstudio.account.AccountProperties;
 import com.oussamaksantini.insightstudio.account.EmailVerificationService;
 import com.oussamaksantini.insightstudio.account.UserQueries;
+import com.oussamaksantini.insightstudio.audit.AuditAction;
+import com.oussamaksantini.insightstudio.audit.AuditLog;
 import com.oussamaksantini.insightstudio.business.InvitationQueries.InvitationRow;
 import com.oussamaksantini.insightstudio.business.dto.BusinessResponse;
 import com.oussamaksantini.insightstudio.business.dto.InvitationPreviewResponse;
@@ -23,6 +25,7 @@ import java.util.Base64;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.regex.Pattern;
 import org.slf4j.Logger;
@@ -67,6 +70,7 @@ public class InvitationService {
     private final RateLimiter limits;
     private final TransactionTemplate transactions;
     private final EmailVerificationService verification;
+    private final AuditLog audit;
     private final SecureRandom random = new SecureRandom();
 
     InvitationService(
@@ -78,7 +82,8 @@ public class InvitationService {
             AccountProperties links,
             RateLimiter limits,
             TransactionTemplate transactions,
-            EmailVerificationService verification) {
+            EmailVerificationService verification,
+            AuditLog audit) {
         this.invitations = invitations;
         this.businesses = businesses;
         this.memberships = memberships;
@@ -88,6 +93,7 @@ public class InvitationService {
         this.limits = limits;
         this.transactions = transactions;
         this.verification = verification;
+        this.audit = audit;
     }
 
     /** ADMIN+: the business's open invitations. */
@@ -124,7 +130,9 @@ public class InvitationService {
             }
             long id = invitations.insert(businessId, cleanEmail, role, sha256(token), caller.userId(), expiresAt);
             InvitationRow row = invitations.find(businessId, id).orElseThrow();
-            notifier.sendInvitation(row.email(), row.invitedByName(), row.businessName(), role,
+            audit.record(businessId, caller.userId(), AuditAction.MEMBER_INVITED, id,
+                    Map.of("email", row.email(), "role", role.name()));
+            notifier.sendInvitation(businessId, row.email(), row.invitedByName(), row.businessName(), role,
                     links.link("/invite", token), row.expiresAt());
             return row;
         });
@@ -142,7 +150,12 @@ public class InvitationService {
         if (invitation.role() == Role.OWNER && callerRole != Role.OWNER) {
             throw ApiException.forbidden("You need the OWNER role for this.");
         }
-        invitations.revoke(invitationId);
+        transactions.executeWithoutResult(status -> {
+            if (invitations.revoke(invitationId)) {
+                audit.record(businessId, caller.userId(), AuditAction.INVITATION_REVOKED, invitationId,
+                        Map.of("email", invitation.email(), "role", invitation.role().name()));
+            }
+        });
         log.info("Account {} revoked invitation {} of business {}.", caller.userId(), invitationId, businessId);
     }
 
@@ -173,6 +186,8 @@ public class InvitationService {
                 throw ApiException.conflict("You're already a member of this business.");
             }
             invitations.markAccepted(invitation.id(), user.id());
+            audit.record(invitation.businessId(), user.id(), AuditAction.INVITATION_ACCEPTED, user.id(),
+                    Map.of("role", invitation.role().name()));
             // The invitation was emailed to this address: accepting it proves the address works.
             verification.verifiedByEmailLink(user.id());
             return memberships.forUser(user.id()).stream()

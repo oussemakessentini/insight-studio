@@ -20,7 +20,7 @@ class EmailInvitationNotifier implements InvitationNotifier {
     }
 
     @Override
-    public void sendInvitation(String email, String invitedBy, String businessName, Role role, String link, Instant expiresAt) {
+    public void sendInvitation(long businessId, String email, String invitedBy, String businessName, Role role, String link, Instant expiresAt) {
         outbox.enqueue("invitation", email, "You're invited to join %s on Insight Studio".formatted(businessName), """
                 Hello,
 
@@ -35,7 +35,7 @@ class EmailInvitationNotifier implements InvitationNotifier {
                 ignore this email.
 
                 Insight Studio
-                """.formatted(invitedBy, businessName, article(role), email, link, EXPIRY.format(expiresAt)), expiresAt);
+                """.formatted(invitedBy, businessName, article(role), email, link, EXPIRY.format(expiresAt)), expiresAt, businessId, null);
     }
 
     private static String article(Role role) {

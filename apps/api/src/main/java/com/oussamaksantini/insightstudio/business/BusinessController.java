@@ -3,6 +3,8 @@ package com.oussamaksantini.insightstudio.business;
 import com.oussamaksantini.insightstudio.account.AccountPrincipal;
 import com.oussamaksantini.insightstudio.account.CurrentAccount;
 import com.oussamaksantini.insightstudio.business.dto.BusinessResponse;
+import com.oussamaksantini.insightstudio.business.dto.BusinessSettingsResponse;
+import com.oussamaksantini.insightstudio.business.dto.TimeZonePreviewResponse;
 import com.oussamaksantini.insightstudio.business.dto.ChangeRoleRequest;
 import com.oussamaksantini.insightstudio.business.dto.CreateBusinessRequest;
 import com.oussamaksantini.insightstudio.business.dto.MemberResponse;
@@ -19,6 +21,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -48,7 +51,18 @@ class BusinessController {
 
     @PatchMapping("/{businessId}")
     BusinessResponse update(@PathVariable @Positive long businessId, @RequestBody UpdateBusinessRequest body) {
-        return service.update(caller(), businessId, body.name(), body.timeZone());
+        return service.update(caller(), businessId, body.name(), body.timeZone(), body.currency());
+    }
+
+    @GetMapping("/{businessId}/settings")
+    BusinessSettingsResponse settings(@PathVariable @Positive long businessId) {
+        return service.settings(caller(), businessId);
+    }
+
+    @GetMapping("/{businessId}/time-zone-preview")
+    TimeZonePreviewResponse timeZonePreview(
+            @PathVariable @Positive long businessId, @RequestParam(required = false) String timeZone) {
+        return service.timeZonePreview(caller(), businessId, timeZone);
     }
 
     @GetMapping("/{businessId}/members")

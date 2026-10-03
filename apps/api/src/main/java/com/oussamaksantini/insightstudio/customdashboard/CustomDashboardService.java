@@ -1,5 +1,7 @@
 package com.oussamaksantini.insightstudio.customdashboard;
 
+import com.oussamaksantini.insightstudio.audit.AuditAction;
+import com.oussamaksantini.insightstudio.audit.AuditLog;
 import com.oussamaksantini.insightstudio.common.web.ApiException;
 import com.oussamaksantini.insightstudio.common.web.FieldErrorsException;
 import com.oussamaksantini.insightstudio.common.web.FieldErrorsException.FieldError;
@@ -16,6 +18,7 @@ import com.oussamaksantini.insightstudio.tenancy.BusinessAccess;
 import com.oussamaksantini.insightstudio.tenancy.CurrentBusiness;
 import com.oussamaksantini.insightstudio.tenancy.Role;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -57,11 +60,27 @@ public class CustomDashboardService {
     private final CurrentBusiness current;
     private final CustomDashboardQueries queries;
     private final DashboardLayoutValidator validator;
+    private final AuditLog audit;
 
-    CustomDashboardService(CurrentBusiness current, CustomDashboardQueries queries, DashboardLayoutValidator validator) {
+    CustomDashboardService(CurrentBusiness current, CustomDashboardQueries queries, DashboardLayoutValidator validator,
+            AuditLog audit) {
         this.current = current;
         this.queries = queries;
         this.validator = validator;
+        this.audit = audit;
+    }
+
+    /** A dashboard's audit event: its name, revision and number of widgets (never its layout). */
+    private void audited(long businessId, long userId, AuditAction action, long id, String name, int revision,
+            DashboardLayout layout, String renamedFrom) {
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put("name", name);
+        details.put("revision", revision);
+        details.put("widgetCount", layout.widgets().size());
+        if (renamedFrom != null) {
+            details.put("renamedFrom", renamedFrom);
+        }
+        audit.record(businessId, userId, action, id, details);
     }
 
     public List<DashboardSummaryResponse> list() {
@@ -115,7 +134,9 @@ public class CustomDashboardService {
         Validated valid = validator.validate(body.get("name"), present(layoutNode) ? layoutNode : null, businessId,
                 unknownFields(body, CREATE_FIELDS));
         DashboardLayout layout = valid.layout() == null ? DashboardLayout.empty() : valid.layout();
-        return response(businessId, load(businessId, insert(businessId, valid.name(), layout, access.userId(), true)));
+        long id = insert(businessId, valid.name(), layout, access.userId(), true);
+        audited(businessId, access.userId(), AuditAction.DASHBOARD_CREATED, id, valid.name(), 1, layout, null);
+        return response(businessId, load(businessId, id));
     }
 
     /**
@@ -155,6 +176,8 @@ public class CustomDashboardService {
             throw nameConflict(valid.name());
         }
         write(businessId, id, revision, valid.name(), valid.layout(), access.userId());
+        audited(businessId, access.userId(), AuditAction.DASHBOARD_UPDATED, id, valid.name(), revision, valid.layout(),
+                valid.name().equals(dashboard.name()) ? null : dashboard.name());
         return response(businessId, load(businessId, id));
     }
 
@@ -190,15 +213,21 @@ public class CustomDashboardService {
         if (!chosen) {
             name = copyName(businessId, source.name());
         }
-        return response(businessId, load(businessId, insert(businessId, name, copy, access.userId(), chosen)));
+        long copyId = insert(businessId, name, copy, access.userId(), chosen);
+        audited(businessId, access.userId(), AuditAction.DASHBOARD_DUPLICATED, copyId, name, 1, copy, null);
+        return response(businessId, load(businessId, copyId));
     }
 
     @Transactional
     public void delete(long id) {
-        long businessId = current.require(Role.ADMIN).businessId();
+        BusinessAccess access = current.require(Role.ADMIN);
+        long businessId = access.businessId();
+        DashboardRow dashboard = load(businessId, id);
         if (!queries.delete(businessId, id)) {
             throw ApiException.notFound(NOT_FOUND);
         }
+        audited(businessId, access.userId(), AuditAction.DASHBOARD_DELETED, id, dashboard.name(), dashboard.revision(),
+                stored(dashboard.layout()), null);
     }
 
     // ---------------------------------------------------------------- helpers

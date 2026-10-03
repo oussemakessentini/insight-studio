@@ -13,7 +13,7 @@ class EmailVerificationNotifier implements VerificationNotifier {
     }
 
     @Override
-    public void sendVerificationLink(String email, String displayName, String link, Instant expiresAt) {
+    public void sendVerificationLink(long userId, String email, String displayName, String link, Instant expiresAt) {
         outbox.enqueue("email verification", email, "Verify your email for Insight Studio", """
                 Hello %s,
 
@@ -26,11 +26,11 @@ class EmailVerificationNotifier implements VerificationNotifier {
                 happens without the link.
 
                 Insight Studio
-                """.formatted(displayName, EmailVerificationService.TOKEN_LIFETIME.toHours(), link), expiresAt);
+                """.formatted(displayName, EmailVerificationService.TOKEN_LIFETIME.toHours(), link), expiresAt, null, userId);
     }
 
     @Override
-    public void sendExistingAccountNotice(String email, String displayName, String signInLink, String resetLink) {
+    public void sendExistingAccountNotice(long userId, String email, String displayName, String signInLink, String resetLink) {
         outbox.enqueue("existing account", email, "You already have an Insight Studio account", """
                 Hello %s,
 
@@ -43,6 +43,6 @@ class EmailVerificationNotifier implements VerificationNotifier {
                 If this wasn't you, you can ignore this email.
 
                 Insight Studio
-                """.formatted(displayName, signInLink, resetLink), null);
+                """.formatted(displayName, signInLink, resetLink), null, null, userId);
     }
 }

@@ -11,11 +11,11 @@ import java.time.Instant;
 public interface VerificationNotifier {
 
     /** A new account's link to verify its address. */
-    void sendVerificationLink(String email, String displayName, String link, Instant expiresAt);
+    void sendVerificationLink(long userId, String email, String displayName, String link, Instant expiresAt);
 
     /**
      * Someone signed up with an address that already has an account: tell its owner (who may have
      * forgotten) how to sign in or reset the password. Carries no token.
      */
-    void sendExistingAccountNotice(String email, String displayName, String signInLink, String resetLink);
+    void sendExistingAccountNotice(long userId, String email, String displayName, String signInLink, String resetLink);
 }

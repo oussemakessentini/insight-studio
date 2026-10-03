@@ -9,5 +9,5 @@ import java.time.Instant;
 public interface PasswordResetNotifier {
 
     /** Called inside the transaction that stores the token, so the email exists exactly when it does. */
-    void sendResetLink(String email, String displayName, String resetLink, Instant expiresAt);
+    void sendResetLink(long userId, String email, String displayName, String resetLink, Instant expiresAt);
 }

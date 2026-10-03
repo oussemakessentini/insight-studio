@@ -18,7 +18,7 @@ public class CapturingPasswordResetNotifier implements PasswordResetNotifier {
     private final List<Sent> sent = new CopyOnWriteArrayList<>();
 
     @Override
-    public void sendResetLink(String email, String displayName, String resetLink, java.time.Instant expiresAt) {
+    public void sendResetLink(long userId, String email, String displayName, String resetLink, java.time.Instant expiresAt) {
         sent.add(new Sent(email, resetLink));
     }
 

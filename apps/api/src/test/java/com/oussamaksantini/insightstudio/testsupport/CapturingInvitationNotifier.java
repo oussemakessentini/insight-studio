@@ -20,7 +20,7 @@ public class CapturingInvitationNotifier implements InvitationNotifier {
     private final List<Sent> sent = new CopyOnWriteArrayList<>();
 
     @Override
-    public void sendInvitation(String email, String invitedBy, String businessName, Role role, String link, Instant expiresAt) {
+    public void sendInvitation(long businessId, String email, String invitedBy, String businessName, Role role, String link, Instant expiresAt) {
         sent.add(new Sent(email, invitedBy, businessName, role, link, expiresAt));
     }
 

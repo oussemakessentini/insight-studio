@@ -13,7 +13,7 @@ class EmailPasswordResetNotifier implements PasswordResetNotifier {
     }
 
     @Override
-    public void sendResetLink(String email, String displayName, String resetLink, Instant expiresAt) {
+    public void sendResetLink(long userId, String email, String displayName, String resetLink, Instant expiresAt) {
         outbox.enqueue("password reset", email, "Reset your Insight Studio password", """
                 Hello %s,
 
@@ -26,6 +26,6 @@ class EmailPasswordResetNotifier implements PasswordResetNotifier {
                 stays the same.
 
                 Insight Studio
-                """.formatted(displayName, AccountService.RESET_TOKEN_LIFETIME.toMinutes(), resetLink), expiresAt);
+                """.formatted(displayName, AccountService.RESET_TOKEN_LIFETIME.toMinutes(), resetLink), expiresAt, null, userId);
     }
 }

@@ -64,12 +64,12 @@ public class EmailVerificationService {
         Instant expiresAt = Instant.now().plus(TOKEN_LIFETIME);
         users.invalidateVerificationTokens(user.id());
         users.insertVerificationToken(user.id(), AccountService.sha256(token), expiresAt);
-        notifier.sendVerificationLink(user.email(), user.displayName(), links.link("/verify-email", token), expiresAt);
+        notifier.sendVerificationLink(user.id(), user.email(), user.displayName(), links.link("/verify-email", token), expiresAt);
     }
 
     /** Emails the owner of an existing account that someone tried to sign up with its address. */
     void noticeExistingAccount(UserRow user) {
-        notifier.sendExistingAccountNotice(user.email(), user.displayName(), links.page("/sign-in"), links.page("/forgot-password"));
+        notifier.sendExistingAccountNotice(user.id(), user.email(), user.displayName(), links.page("/sign-in"), links.page("/forgot-password"));
     }
 
     /**

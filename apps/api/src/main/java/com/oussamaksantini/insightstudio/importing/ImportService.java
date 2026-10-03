@@ -1,5 +1,7 @@
 package com.oussamaksantini.insightstudio.importing;
 
+import com.oussamaksantini.insightstudio.audit.AuditAction;
+import com.oussamaksantini.insightstudio.audit.AuditLog;
 import com.oussamaksantini.insightstudio.business.Business;
 import com.oussamaksantini.insightstudio.common.web.ApiException;
 import com.oussamaksantini.insightstudio.importing.CatalogValidator.Plan;
@@ -79,12 +81,15 @@ public class ImportService {
     private final ImportQueries queries;
     private final TransactionTemplate transaction;
     private final TransactionTemplate readOnly;
+    private final AuditLog audit;
 
-    ImportService(ReportingContext reporting, CurrentBusiness current, ImportQueries queries, TransactionTemplate transaction) {
+    ImportService(ReportingContext reporting, CurrentBusiness current, ImportQueries queries, TransactionTemplate transaction,
+            AuditLog audit) {
         this.reporting = reporting;
         this.current = current;
         this.queries = queries;
         this.transaction = transaction;
+        this.audit = audit;
         this.readOnly = new TransactionTemplate(transaction.getTransactionManager());
         this.readOnly.setReadOnly(true);
     }
@@ -231,9 +236,12 @@ public class ImportService {
         if (result.status() == ImportStatus.REJECTED) {
             // After the rollback, in a transaction of its own: the history keeps the attempt, never its data.
             int errorCount = result.errorCount();
-            transaction.executeWithoutResult(status -> queries.insertBatch(new NewBatch(upload.business().getId(),
-                    upload.kind(), upload.mode(), ImportStatus.REJECTED, upload.fileName(), upload.sha256(),
-                    upload.rowCount(), 0, 0, Counts.NONE.totalAmount(), 0, 0, 0, errorCount, upload.userId())));
+            transaction.executeWithoutResult(status -> {
+                long batchId = queries.insertBatch(new NewBatch(upload.business().getId(),
+                        upload.kind(), upload.mode(), ImportStatus.REJECTED, upload.fileName(), upload.sha256(),
+                        upload.rowCount(), 0, 0, Counts.NONE.totalAmount(), 0, 0, 0, errorCount, upload.userId()));
+                audited(upload, batchId, AuditAction.IMPORT_REJECTED, 0, 0, errorCount);
+            });
         }
         return result;
     }
@@ -255,10 +263,24 @@ public class ImportService {
                 queries.updateProducts(businessId, checked.products().updates());
             }
         }
+        audited(upload, batchId, AuditAction.IMPORT_COMPLETED, counts.created(), counts.updated(), 0);
         log.info("Imported '{}' ({}, {}) into business {}: batch {}, {} created, {} updated, {} unchanged, {} line items, total {}.",
                 upload.fileName(), upload.kind().param(), upload.mode().param(), businessId, batchId, counts.created(),
                 counts.updated(), counts.unchanged(), counts.lineCount(), counts.totalAmount());
         return result(upload, batchId, ImportStatus.IMPORTED, false, counts, List.of());
+    }
+
+    /** The import's audit event (in the transaction that records the batch): never the file's content or hash. */
+    private void audited(Upload upload, long batchId, AuditAction action, int created, int updated, int errors) {
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put("kind", upload.kind().param());
+        details.put("mode", upload.mode().param());
+        details.put("fileName", upload.fileName());
+        details.put("rows", upload.rowCount());
+        details.put("created", created);
+        details.put("updated", updated);
+        details.put("errors", errors);
+        audit.record(upload.business().getId(), upload.userId(), action, batchId, details);
     }
 
     // ---------------------------------------------------------------- validation
