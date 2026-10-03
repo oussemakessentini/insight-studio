@@ -89,6 +89,8 @@ export interface AccountDeletionPreview {
   /** Businesses where this account is the only owner: deletion is refused while any is listed. */
   blockingBusinesses: { businessId: number; businessName: string }[]
   authoredContent: { charts: number; dashboards: number; savedReports: number; imports: number }
+  /** Open invitations this account sent; deleting the account revokes them (their emails are cancelled). */
+  openInvitationsSent: number
 }
 
 // Path ids are checked against the business resolved from X-Business-Id, so each call selects the

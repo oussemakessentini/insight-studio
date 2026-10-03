@@ -92,7 +92,7 @@ function DeleteAccountForm({ onClose, onBusyChange }: { onClose: () => void; onB
 
   if (preview.error) return <ErrorState message={preview.error.message} onRetry={preview.retry} />
   if (!preview.data) return <SkeletonRows rows={4} />
-  const { account, memberships, blockingBusinesses, authoredContent } = preview.data
+  const { account, memberships, blockingBusinesses, authoredContent, openInvitationsSent } = preview.data
 
   if (blockingBusinesses.length > 0) {
     const openMembers = (businessId: number) => (event: MouseEvent<HTMLAnchorElement>) => {
@@ -180,6 +180,11 @@ function DeleteAccountForm({ onClose, onBusyChange }: { onClose: () => void; onB
       {authored.length > 0 && (
         <p className="dialog-text">
           {authored.join(', ')} you created stay with their businesses, shown as by “Deleted account”.
+        </p>
+      )}
+      {openInvitationsSent > 0 && (
+        <p className="dialog-text">
+          {plural(openInvitationsSent, 'open invitation')} you sent will be revoked.
         </p>
       )}
       {error && <FormError>{error}</FormError>}
