@@ -35,6 +35,11 @@ public record RateLimit(String name, int max, Duration window) {
     /** Verification-token attempts from one client IP. */
     public static final RateLimit VERIFICATION_TOKEN_PER_IP = new RateLimit("verify-token:ip", 30, Duration.ofMinutes(15));
 
+    /** Business data exports (ZIP) of one business. */
+    public static final RateLimit BUSINESS_EXPORTS = new RateLimit("export:business", 5, Duration.ofHours(1));
+    /** Account data exports (JSON) of one account. */
+    public static final RateLimit ACCOUNT_EXPORTS = new RateLimit("export:account", 5, Duration.ofHours(1));
+
     public RateLimit {
         if (max < 1 || window.isNegative() || window.isZero() || window.compareTo(RateLimiter.RETENTION) > 0) {
             throw new IllegalArgumentException("Invalid rate limit " + name);
