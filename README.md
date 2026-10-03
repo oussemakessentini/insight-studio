@@ -42,16 +42,18 @@ Browser ──> Vite dev server (:5173) ──/api proxy──> Spring Boot API 
 | `sales` | One receipt: store, receipt number, `sold_at` timestamp |
 | `sale_items` | Product, quantity and the **unit price actually charged** |
 | `import_batches` | CSV import history (V3, V13): type (sales, stores, products), mode, outcome (imported or rejected), counts, who imported, content hash (one imported file per business and type); imported sales point to their batch through `sales.import_batch_id` |
-| `users`, `business_memberships` | Accounts (V4): email, bcrypt hash, session version; one role (OWNER, ADMIN, VIEWER) per user and business |
+| `users`, `business_memberships` | Accounts (V4): email, bcrypt hash, session version; one role (OWNER, ADMIN, VIEWER) per user and business. A deleted account becomes a tombstone (V16): personal fields erased, id kept for authorship |
 | `password_reset_tokens` | Recovery (V4): SHA-256 of a single-use token, 30-minute expiry |
 | `spring_session`, `spring_session_attributes` | Sessions (V5), shared by every API instance and kept across restarts |
 | `rate_limit_hits` | Rate limits (V6): hashed buckets for sign-in, sign-up, recovery and invitations |
 | `invitations` | Invitations (V7): SHA-256 of a single-use token, 7-day expiry, invited email and role |
-| `mail_outbox` | Account emails waiting to be sent (V8); bodies erased once sent or abandoned |
+| `mail_outbox` | Account emails waiting to be sent (V8); bodies erased once sent or abandoned; the business or account an email belongs to (V16), so deletions cancel it |
 | `email_verification_tokens` | Email verification (V9): SHA-256 of a single-use token, 24-hour expiry; `users.email_verified_at` |
 | `saved_reports` | Saved report definitions (V10): name, kind, fixed dates or a relative preset, optional store of the same business (composite foreign key) |
 | `chart_definitions`, `chart_definition_revisions` | Custom charts (V14): title, current revision, and every saved version of the definition (JSON validated by the API) |
 | `dashboards`, `dashboard_revisions`, `dashboard_chart_refs` | Custom dashboards (V15): name, current revision, every saved layout (JSONB desktop and mobile grids of x, y, w, h), and the charts the current layout uses, with composite foreign keys so a dashboard can only reference its own business's charts |
+| `audit_events` | Audit history (V16): settings, membership, import, chart and dashboard changes per business, written in the same transaction; allowlisted details, never secrets |
+| `cube_purge_requests` | Cube purges queued by business deletions (V16), processed by a worker on any API instance |
 
 Revenue is always `SUM(quantity × sale_items.unit_price)`, so historical revenue is unaffected when
 a product's list price changes. Days, weeks and months are bucketed in the business's time zone.
@@ -105,8 +107,10 @@ a product's list price changes. Days, weeks and months are bucketed in the busin
 | `/businesses/new` | Create a business (shown after sign-up when you have none); the sidebar switches between your businesses |
 | `/settings/catalog` | Add stores and products (owners and admins) |
 | `/settings/members` | Members, roles and invitations (owners and admins) |
+| `/settings/business` | Business name, time zone (with a preview of how history is re-bucketed) and currency (only while the business holds no amounts); export and delete the business. Owners change, admins read |
+| `/settings/activity` | Audit history of settings, members, imports, charts and dashboards, filterable (owners and admins) |
 | `/invite` | Accept an invitation from its emailed link |
-| `/account` | Profile, password change and sign-out |
+| `/account` | Profile, password change, sign-out, download your data and delete your account |
 
 Signed-out visitors see the read-only demo when it is enabled, otherwise the sign-in page. Viewers
 and the demo don't see Import, Catalog or Members. Frontend details:
@@ -256,7 +260,11 @@ curl walkthrough: [docs/auth.md](docs/auth.md).
 | `POST /api/auth/sign-up`, `/sign-in`, `/sign-out` | Accounts and sessions (sign-up always answers `202`, whether or not the address has an account; both are rate limited) |
 | `POST /api/auth/verify-email`, `/verify-email/resend` | Verify an address from its emailed link; send a new link |
 | `POST /api/auth/password/change`, `/password/forgot`, `/password/reset` | Password change and recovery (single-use tokens, 30 minutes) |
-| `GET`, `POST /api/businesses`; `PATCH /api/businesses/{id}` | Your businesses; create one (you become OWNER); rename (OWNER) |
+| `GET`, `POST /api/businesses`; `PATCH /api/businesses/{id}` | Your businesses; create one (you become OWNER); change name, time zone or currency (OWNER; currency only while the business has no products or sales) |
+| `GET /api/businesses/{id}/settings`, `/time-zone-preview` | Settings with whether the currency can change; what a time-zone change does to past days and months (OWNER) |
+| `GET /api/businesses/{id}/audit` | Audit history, newest first, by category (owners and admins) |
+| `GET /api/businesses/{id}/export`, `/deletion-preview`; `DELETE /api/businesses/{id}` | ZIP export of every business file; what deletion removes; delete with password and typed name (OWNER) |
+| `GET /api/account/export`, `/deletion-preview`; `DELETE /api/account` | Your data as JSON; delete your account with password and typed email (refused while you are a business's only owner) |
 | `/api/businesses/{id}/members[/{userId}]` | List, change role, remove (owners and admins, with last-owner protection) |
 | `/api/businesses/{id}/invitations[/{invitationId}]` | Invite by email, list open invitations, revoke (owners and admins) |
 | `POST /api/invitations/preview`, `/accept` | Show an invitation from its token; accept it (signed in, invited address only) |
@@ -337,7 +345,9 @@ belonging to other businesses return `404`.
 Details: [docs/stores.md](docs/stores.md), [docs/reports.md](docs/reports.md),
 [docs/saved-reports-api.md](docs/saved-reports-api.md), [docs/frontend-saved-reports.md](docs/frontend-saved-reports.md),
 [docs/chart-builder-api.md](docs/chart-builder-api.md), [docs/frontend-charts.md](docs/frontend-charts.md),
-[docs/dashboards-contract.md](docs/dashboards-contract.md), [docs/dashboards-api.md](docs/dashboards-api.md), [docs/frontend-dashboards.md](docs/frontend-dashboards.md).
+[docs/dashboards-contract.md](docs/dashboards-contract.md), [docs/dashboards-api.md](docs/dashboards-api.md), [docs/frontend-dashboards.md](docs/frontend-dashboards.md),
+[docs/account-management-contract.md](docs/account-management-contract.md), [docs/account-management-api.md](docs/account-management-api.md),
+[docs/frontend-account-management.md](docs/frontend-account-management.md), [docs/data-retention.md](docs/data-retention.md).
 
 **CSV import** (OWNER or ADMIN with a verified email; viewers get `403`, signed-out visitors `401`),
 for `{kind}` = `sales`, `stores` or `products`: `GET /api/imports/templates/{kind}.csv`;
@@ -372,6 +382,7 @@ cd apps\api
 cd ..\web
 npm run lint
 npm run build
+npm test
 ```
 
 Backend tests start a throwaway PostgreSQL 16 container with Testcontainers, so Docker must be
@@ -433,6 +444,13 @@ running. They do not touch your local database. The tests cover:
   stored and read back per revision, duplication, the permission matrix, another business's
   dashboards and charts out of reach (also refused by the database), conflicting saves answering
   409 without overwriting, deleted charts reported as missing, and the chart run limit
+- business settings and account management: the permission matrix of every new endpoint; currency
+  refused once there are amounts; a sale near midnight changing day and month with the time zone
+  while totals stay equal; every audit action, paging and isolation, with stored details scanned for
+  secrets; export contents equal to the database and free of other businesses' data; business and
+  account deletion end to end (every table, pending mail, sessions on the next request, tombstones,
+  last-owner protection, reauthentication and its rate limit); retention purges; and, with Cube, no
+  Cube Store table holding a deleted business's rows after the purge
 - saved reports: every endpoint against OWNER, ADMIN, VIEWER, unverified and signed-out callers;
   another business's definitions and stores answer 404 everywhere, including exports; every
   relative preset at month, quarter, year and leap-year boundaries and in time zones a day apart
@@ -454,6 +472,8 @@ running. They do not touch your local database. The tests cover:
   keyboard editing, and conflict detection
 - Accounts, businesses and roles (owner, admin, viewer) with server-side authorization and
   business isolation on every endpoint; password recovery by email
+- Business settings (name, time zone, currency rules), audit history, account and business export,
+  and account and business deletion with reauthentication and a retention policy
 - Email invitations; sessions and rate limits in PostgreSQL for several API instances; trusted
   proxy handling and a `prod` profile that requires HTTPS settings
 - Email verification, sign-up that never reveals existing accounts, and a persistent mail outbox
@@ -465,8 +485,7 @@ running. They do not touch your local database. The tests cover:
 
 **Later:**
 
-- Account deletion and email address changes
-- Business settings UI (rename, time zone)
+- Email address changes
 - Scheduled report emails (saved reports sent through the mail outbox)
 - Run the Cube trial ([docs/cube-trial.md](docs/cube-trial.md)) on production-like data; if it passes,
   make Cube the default report engine, then retire the SQL report queries
