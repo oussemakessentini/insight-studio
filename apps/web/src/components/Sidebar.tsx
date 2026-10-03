@@ -5,6 +5,7 @@ import { signInHref } from '../lib/router'
 import { currentMembership, useSession } from '../lib/session'
 import {
   BoxIcon,
+  ChartIcon,
   CloseIcon,
   DashboardIcon,
   LogoMark,
@@ -25,6 +26,7 @@ export type Section =
   | 'sales'
   | 'stores'
   | 'reports'
+  | 'charts'
   | 'imports'
   | 'members'
   | 'catalog'
@@ -45,6 +47,7 @@ const NAV: NavItem[] = [
   { label: 'Sales', icon: ReceiptIcon, section: 'sales' },
   { label: 'Stores', icon: StoreIcon, section: 'stores' },
   { label: 'Reports', icon: ReportIcon, section: 'reports' },
+  { label: 'Charts', icon: ChartIcon, section: 'charts' },
   { label: 'Import', icon: UploadIcon, section: 'imports', allowed: (a) => a.canImport },
 ]
 

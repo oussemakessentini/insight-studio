@@ -60,6 +60,13 @@ export const ReportIcon = (p: IconProps) => (
   </Icon>
 )
 
+export const ChartIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M3 3v18h18" />
+    <path d="M7 15l4-5 3 3 5-6" />
+  </Icon>
+)
+
 export const UploadIcon = (p: IconProps) => (
   <Icon {...p}>
     <path d="M12 16V4M7 9l5-5 5 5" />
