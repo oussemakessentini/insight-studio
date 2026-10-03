@@ -1,13 +1,16 @@
 import { useId, type ComponentType, type SVGProps } from 'react'
 import { ROLE_LABELS } from '../api/account'
 import type { BusinessAccess } from '../api/types'
+import { isAdminOrOwner } from '../lib/settingsAccess'
 import { signInHref } from '../lib/router'
 import { currentMembership, useSession } from '../lib/session'
 import {
   BoxIcon,
+  BuildingIcon,
   ChartIcon,
   CloseIcon,
   DashboardIcon,
+  HistoryIcon,
   LayoutIcon,
   LogoMark,
   PlusIcon,
@@ -32,6 +35,8 @@ export type Section =
   | 'imports'
   | 'members'
   | 'catalog'
+  | 'business'
+  | 'activity'
   | 'account'
   | 'newBusiness'
 
@@ -57,6 +62,8 @@ const NAV: NavItem[] = [
 const SETTINGS_NAV: NavItem[] = [
   { label: 'Members', icon: UsersIcon, section: 'members', allowed: (a) => a.canManageMembers },
   { label: 'Catalog', icon: BoxIcon, section: 'catalog', allowed: (a) => a.canManageCatalog },
+  { label: 'Business', icon: BuildingIcon, section: 'business', allowed: (a) => isAdminOrOwner(a) },
+  { label: 'Activity', icon: HistoryIcon, section: 'activity', allowed: (a) => isAdminOrOwner(a) },
 ]
 
 interface SidebarProps {

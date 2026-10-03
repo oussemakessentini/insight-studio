@@ -32,6 +32,8 @@ export type Route =
   | { name: 'newBusiness' }
   | { name: 'members' }
   | { name: 'catalog' }
+  | { name: 'businessSettings' }
+  | { name: 'activity' }
   | { name: 'notFound' }
 
 /** Pages for signing in and recovering an account; they don't need a session or a business. */
@@ -43,7 +45,14 @@ export function isAuthRoute(route: Route): route is Route & { name: AuthRouteNam
 
 /** Pages about the signed-in user or business administration; never shown to anonymous visitors. */
 export function requiresAccount(route: Route): boolean {
-  return route.name === 'account' || route.name === 'newBusiness' || route.name === 'members' || route.name === 'catalog'
+  return (
+    route.name === 'account' ||
+    route.name === 'newBusiness' ||
+    route.name === 'members' ||
+    route.name === 'catalog' ||
+    route.name === 'businessSettings' ||
+    route.name === 'activity'
+  )
 }
 
 const NAVIGATE_EVENT = 'app:navigate'
@@ -189,6 +198,8 @@ export function matchRoute(pathname: string): Route {
   if (path === '/businesses/new') return { name: 'newBusiness' }
   if (path === '/settings/members') return { name: 'members' }
   if (path === '/settings/catalog') return { name: 'catalog' }
+  if (path === '/settings/business') return { name: 'businessSettings' }
+  if (path === '/settings/activity') return { name: 'activity' }
   return { name: 'notFound' }
 }
 

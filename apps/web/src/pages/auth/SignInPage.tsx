@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { authApi } from '../../api/account'
 import { AuthLayout } from '../../components/AuthLayout'
-import { FormError, SubmitButton, TextField } from '../../components/Form'
+import { FormError, FormSuccess, SubmitButton, TextField } from '../../components/Form'
 import { Link } from '../../components/Link'
 import { useTouched } from '../../hooks/useTouched'
 import { safeNext, signInHref } from '../../lib/router'
@@ -21,6 +21,8 @@ export function SignInPage() {
     password: requiredError(password, 'Enter your password.'),
   }
   const next = safeNext()
+  // Set by account deletion (AccountPage), which signs the user out and lands here.
+  const [accountDeleted] = useState(() => new URLSearchParams(window.location.search).get('accountDeleted') === '1')
 
   const onSubmit = async (event: FormEvent) => {
     event.preventDefault()
@@ -55,6 +57,9 @@ export function SignInPage() {
       }
     >
       <form className="form-stack" onSubmit={(e) => void onSubmit(e)} noValidate>
+        {accountDeleted && !error && (
+          <FormSuccess>Your account has been deleted and you have been signed out. Thank you for using Insight Studio.</FormSuccess>
+        )}
         {error && <FormError>{error}</FormError>}
         <TextField
           label="Email"

@@ -1,0 +1,263 @@
+/* ==========================================================================
+   Settings › Business, Settings › Activity and the account data panels.
+   Builds on index.css tokens and accounts.css forms.
+   ========================================================================== */
+
+.settings-panel {
+  max-width: 880px;
+}
+
+.settings-note {
+  margin: 0;
+}
+
+.settings-fieldset {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.settings-fieldset > legend {
+  padding: 0;
+  margin-bottom: 8px;
+  font-weight: 650;
+}
+
+/* ---------- Time zone impact --------------------------------------------- */
+
+.tz-impact {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--blue-50);
+  min-width: 0;
+}
+
+.tz-impact-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 650;
+  color: var(--navy-900);
+  overflow-wrap: anywhere;
+}
+
+.tz-impact-rules {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tz-impact-summary {
+  margin: 0;
+  font-size: 14px;
+}
+
+.tz-impact-loading {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tz-impact .table-scroll {
+  background: var(--surface);
+  border-radius: var(--radius-sm);
+}
+
+.tz-impact-table th[scope='row'] {
+  font-weight: 550;
+  text-align: left;
+  white-space: nowrap;
+}
+
+/* ---------- Danger zone --------------------------------------------------- */
+
+.danger-zone {
+  border-color: #f2c4bf;
+  max-width: 880px;
+}
+
+.danger-zone .panel-title {
+  color: var(--bad-text);
+}
+
+.danger-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.danger-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px 20px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.danger-item:first-child {
+  padding-top: 0;
+}
+
+.danger-item:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.danger-text {
+  flex: 1 1 320px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.danger-text p {
+  margin: 0;
+  font-size: 14px;
+}
+
+.danger-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.button-with-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.button-with-icon svg {
+  flex: none;
+}
+
+/* ---------- Deletion dialogs ---------------------------------------------- */
+
+.deletion-counts {
+  margin: 0;
+  padding: 10px 14px 10px 30px;
+  border-radius: var(--radius);
+  background: var(--bad-bg);
+  color: var(--text);
+  font-size: 14px;
+  columns: 2;
+  column-gap: 24px;
+}
+
+.deletion-member-list,
+.blocking-list {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 14px;
+}
+
+.blocking-list li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+/* ---------- Activity ------------------------------------------------------ */
+
+.activity-filter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.activity-filter .form-label {
+  margin: 0;
+}
+
+.activity-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.activity-item {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+  min-width: 0;
+}
+
+.activity-item:first-child {
+  padding-top: 0;
+}
+
+.activity-sentence {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.activity-meta {
+  margin: 2px 0 0;
+  font-size: 12.5px;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.activity-actor {
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.activity-actor.is-deleted {
+  font-style: italic;
+  font-weight: 500;
+}
+
+.activity-more {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding-top: 16px;
+}
+
+.activity-end {
+  margin: 0;
+  font-size: 13px;
+}
+
+@media (max-width: 640px) {
+  .deletion-counts {
+    columns: 1;
+  }
+
+  .activity-filter {
+    width: 100%;
+  }
+
+  .activity-filter select {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .danger-item > .button {
+    width: 100%;
+    justify-content: center;
+  }
+}
