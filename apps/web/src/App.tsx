@@ -16,6 +16,7 @@ import { filterQuery, filtersFromUrl, withFilters, type Filters } from './lib/fi
 import { chartPermissions } from './lib/charts'
 import { dashboardPermissions } from './lib/dashboards'
 import { savedReportPermissions } from './lib/savedReports'
+import { isAdminOrOwner } from './lib/settingsAccess'
 import {
   currentLocation,
   isAuthRoute,
@@ -38,6 +39,8 @@ import {
   type SessionContextValue,
 } from './lib/session'
 import { AccountPage } from './pages/AccountPage'
+import { ActivityPage } from './pages/ActivityPage'
+import { BusinessSettingsPage } from './pages/BusinessSettingsPage'
 import { ForgotPasswordPage } from './pages/auth/ForgotPasswordPage'
 import { InvitePage } from './pages/auth/InvitePage'
 import { VerifyEmailPage } from './pages/auth/VerifyEmailPage'
@@ -291,6 +294,8 @@ function Workspace({
         (access.canImport ? <ImportDetailPage key={route.importId} importId={route.importId} {...pageProps} /> : noAccess)}
       {route.name === 'members' && (access.canManageMembers ? <MembersPage {...pageProps} /> : noAccess)}
       {route.name === 'catalog' && (access.canManageCatalog ? <CatalogPage {...pageProps} /> : noAccess)}
+      {route.name === 'businessSettings' && (isAdminOrOwner(access) ? <BusinessSettingsPage {...pageProps} /> : noAccess)}
+      {route.name === 'activity' && (isAdminOrOwner(access) ? <ActivityPage {...pageProps} /> : noAccess)}
       {route.name === 'account' && <AccountPage />}
       {route.name === 'newBusiness' && <NewBusinessPage />}
       {route.name === 'notFound' && <NotFound homeHref={href('/')} />}
@@ -338,6 +343,10 @@ function sectionOf(route: Route): Section | null {
       return 'members'
     case 'catalog':
       return 'catalog'
+    case 'businessSettings':
+      return 'business'
+    case 'activity':
+      return 'activity'
     case 'account':
       return 'account'
     case 'newBusiness':
@@ -359,6 +368,8 @@ function sectionHrefs(href: (path: string) => string): Record<Section, string> {
     imports: href('/imports'),
     members: href('/settings/members'),
     catalog: href('/settings/catalog'),
+    business: href('/settings/business'),
+    activity: href('/settings/activity'),
     account: href('/account'),
     newBusiness: href('/businesses/new'),
   }

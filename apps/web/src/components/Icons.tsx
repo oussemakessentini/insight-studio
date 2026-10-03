@@ -201,3 +201,26 @@ export const LockIcon = (p: IconProps) => (
     <path d="M8.5 10.5V7.5a3.5 3.5 0 0 1 7 0v3" />
   </Icon>
 )
+
+/** Business settings: a building. */
+export const BuildingIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <rect x="4" y="3" width="16" height="18" rx="1.5" />
+    <path d="M9 21v-4h6v4M8 7h2M14 7h2M8 11h2M14 11h2" />
+  </Icon>
+)
+
+/** Activity history: a clock with a rewind arrow. */
+export const HistoryIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M3 12a9 9 0 1 0 2.6-6.4L3 8" />
+    <path d="M3 3v5h5M12 7v5l3 2" />
+  </Icon>
+)
+
+/** Downloads: an arrow into a tray. */
+export const DownloadIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M12 4v11M7 10l5 5 5-5M5 20h14" />
+  </Icon>
+)
