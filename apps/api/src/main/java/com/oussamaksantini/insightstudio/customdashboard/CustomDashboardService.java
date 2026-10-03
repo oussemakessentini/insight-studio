@@ -81,8 +81,8 @@ public class CustomDashboardService {
         }
         RevisionRow row = queries.revision(businessId, id, revision).orElseThrow(() -> ApiException.notFound(
                 "Revision %d of this dashboard was not found.".formatted(revision)));
-        JsonNode layout = JSON.readTree(row.layout());
-        return new DashboardResponse(dashboard.id(), row.name(), row.revision(), layout, widgets(businessId, layout),
+        DashboardLayout layout = stored(row.layout());
+        return new DashboardResponse(dashboard.id(), row.name(), row.revision(), layout.toJson(), widgets(businessId, layout),
                 dashboard.createdBy(), row.createdBy(), dashboard.createdAt(), row.createdAt());
     }
 
@@ -180,7 +180,7 @@ public class CustomDashboardService {
         }
         boolean chosen = name != null;
 
-        DashboardLayout layout = DashboardLayout.fromStored(JSON.readTree(source.layout()));
+        DashboardLayout layout = stored(source.layout());
         Set<Long> charts = queries.chartsOfBusiness(businessId, layout.chartIds());
         Set<String> missing = layout.widgets().stream().filter(w -> !charts.contains(w.chartId()))
                 .map(DashboardLayout.Widget::id).collect(Collectors.toSet());
@@ -248,14 +248,21 @@ public class CustomDashboardService {
     }
 
     private DashboardResponse response(long businessId, DashboardRow row) {
-        JsonNode layout = JSON.readTree(row.layout());
-        return new DashboardResponse(row.id(), row.name(), row.revision(), layout, widgets(businessId, layout),
+        DashboardLayout layout = stored(row.layout());
+        return new DashboardResponse(row.id(), row.name(), row.revision(), layout.toJson(), widgets(businessId, layout),
                 row.createdBy(), row.updatedBy(), row.createdAt(), row.updatedAt());
     }
 
+    /**
+     * A stored layout. PostgreSQL's {@code jsonb} does not keep key order, so responses are rebuilt in
+     * the contract's order from it.
+     */
+    private static DashboardLayout stored(String layout) {
+        return DashboardLayout.fromStored(JSON.readTree(layout));
+    }
+
     /** The layout's widgets with their charts as they are now ({@code null} and missing when deleted). */
-    private List<DashboardWidgetResponse> widgets(long businessId, JsonNode layoutNode) {
-        DashboardLayout layout = DashboardLayout.fromStored(layoutNode);
+    private List<DashboardWidgetResponse> widgets(long businessId, DashboardLayout layout) {
         Map<Long, DashboardWidgetResponse.Chart> charts = queries.chartSummaries(businessId, layout.chartIds());
         return layout.widgets().stream().map(w -> {
             DashboardWidgetResponse.Chart chart = charts.get(w.chartId());
