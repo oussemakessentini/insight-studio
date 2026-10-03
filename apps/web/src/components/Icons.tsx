@@ -32,6 +32,42 @@ export const DashboardIcon = (p: IconProps) => (
   </Icon>
 )
 
+/** Custom dashboards: panels of different sizes on a grid. */
+export const LayoutIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <rect x="3" y="3" width="18" height="18" rx="2" />
+    <path d="M3 10h18M12 10v11" />
+  </Icon>
+)
+
+/** A drag handle: two columns of dots. */
+export const GripIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <circle cx="9" cy="6" r="1" fill="currentColor" />
+    <circle cx="15" cy="6" r="1" fill="currentColor" />
+    <circle cx="9" cy="12" r="1" fill="currentColor" />
+    <circle cx="15" cy="12" r="1" fill="currentColor" />
+    <circle cx="9" cy="18" r="1" fill="currentColor" />
+    <circle cx="15" cy="18" r="1" fill="currentColor" />
+  </Icon>
+)
+
+/** A resize corner: two diagonal strokes. */
+export const ResizeIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M20 12l-8 8M20 18l-2 2" />
+  </Icon>
+)
+
+export const RefreshIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M20 11a8 8 0 0 0-14.8-4.2L4 8.5" />
+    <path d="M4 4v4.5h4.5" />
+    <path d="M4 13a8 8 0 0 0 14.8 4.2l1.2-1.7" />
+    <path d="M20 20v-4.5h-4.5" />
+  </Icon>
+)
+
 export const ReceiptIcon = (p: IconProps) => (
   <Icon {...p}>
     <path d="M6 3h12v18l-3-2-3 2-3-2-3 2z" />

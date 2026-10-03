@@ -14,6 +14,7 @@ import { useSessionLoader } from './hooks/useSessionLoader'
 import { useStateResetOn } from './hooks/useStateResetOn'
 import { filterQuery, filtersFromUrl, withFilters, type Filters } from './lib/filters'
 import { chartPermissions } from './lib/charts'
+import { dashboardPermissions } from './lib/dashboards'
 import { savedReportPermissions } from './lib/savedReports'
 import {
   currentLocation,
@@ -48,6 +49,7 @@ import { ChartBuilderPage } from './pages/ChartBuilderPage'
 import { ChartPage } from './pages/ChartPage'
 import { ChartsPage, ChartsSignIn } from './pages/ChartsPage'
 import { DashboardPage } from './pages/DashboardPage'
+import { DashboardsPage, DashboardsSignIn } from './pages/DashboardsPage'
 import { ImportDetailPage } from './pages/ImportDetailPage'
 import { ImportsPage } from './pages/ImportsPage'
 import { MembersPage } from './pages/MembersPage'
@@ -224,6 +226,8 @@ function Workspace({
   const savedReportsAvailable = savedReportPermissions(access).available
   // Charts too: members only; building them is for verified owners and admins.
   const charts = chartPermissions(access)
+  // Dashboards follow the same rules: members only; arranging them is for verified owners and admins.
+  const dashboards = dashboardPermissions(access)
 
   return (
     <Shell
@@ -234,6 +238,7 @@ function Workspace({
       demo={!session.authenticated}
     >
       {route.name === 'dashboard' && <DashboardPage {...pageProps} />}
+      {route.name === 'dashboards' && (dashboards.available ? <DashboardsPage {...pageProps} /> : <DashboardsSignIn />)}
       {route.name === 'products' && <ProductsPage {...pageProps} />}
       {/* Keyed so switching products starts from a clean state. */}
       {route.name === 'product' && <ProductDetailPage key={route.productId} productId={route.productId} {...pageProps} />}
@@ -288,6 +293,8 @@ function sectionOf(route: Route): Section | null {
   switch (route.name) {
     case 'dashboard':
       return 'dashboard'
+    case 'dashboards':
+      return 'dashboards'
     case 'products':
     case 'product':
       return 'products'
@@ -325,6 +332,7 @@ function sectionOf(route: Route): Section | null {
 function sectionHrefs(href: (path: string) => string): Record<Section, string> {
   return {
     dashboard: href('/'),
+    dashboards: href('/dashboards'),
     products: href('/products'),
     sales: href('/sales'),
     stores: href('/stores'),

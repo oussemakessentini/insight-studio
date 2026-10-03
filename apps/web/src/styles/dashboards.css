@@ -1,0 +1,7 @@
+/* ---------- Dashboards: list --------------------------------------------- */
+
+/* Deleted charts still on a dashboard: a warning chip, not an error. */
+.dashboard-missing-chip {
+  background: #fff4e5;
+  color: #8a4b00;
+}

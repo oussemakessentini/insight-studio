@@ -17,6 +17,7 @@ export type Route =
   | { name: 'chartNew' }
   | { name: 'chart'; chartId: number }
   | { name: 'chartEdit'; chartId: number }
+  | { name: 'dashboards' }
   | { name: 'imports' }
   | { name: 'import'; importId: number }
   | { name: 'signIn' }
@@ -106,6 +107,7 @@ export function matchRoute(pathname: string): Route {
   if (chart) return { name: 'chart', chartId: Number(chart[1]) }
   const chartEdit = /^\/charts\/(\d+)\/edit$/.exec(path)
   if (chartEdit) return { name: 'chartEdit', chartId: Number(chartEdit[1]) }
+  if (path === '/dashboards') return { name: 'dashboards' }
   if (path === '/imports') return { name: 'imports' }
   const batch = /^\/imports\/(\d+)$/.exec(path)
   if (batch) return { name: 'import', importId: Number(batch[1]) }

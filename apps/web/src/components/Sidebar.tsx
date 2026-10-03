@@ -8,6 +8,7 @@ import {
   ChartIcon,
   CloseIcon,
   DashboardIcon,
+  LayoutIcon,
   LogoMark,
   PlusIcon,
   ReceiptIcon,
@@ -22,6 +23,7 @@ import { Link } from './Link'
 
 export type Section =
   | 'dashboard'
+  | 'dashboards'
   | 'products'
   | 'sales'
   | 'stores'
@@ -42,7 +44,8 @@ interface NavItem {
 }
 
 const NAV: NavItem[] = [
-  { label: 'Dashboard', icon: DashboardIcon, section: 'dashboard' },
+  { label: 'Overview', icon: DashboardIcon, section: 'dashboard' },
+  { label: 'Dashboards', icon: LayoutIcon, section: 'dashboards' },
   { label: 'Products', icon: TagIcon, section: 'products' },
   { label: 'Sales', icon: ReceiptIcon, section: 'sales' },
   { label: 'Stores', icon: StoreIcon, section: 'stores' },
