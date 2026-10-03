@@ -78,7 +78,17 @@ export function DashboardViewPage({ dashboardId, context, href }: PageProps & { 
           </nav>
         }
         title={shown ? <span className="break-anywhere">{shown.name}</span> : <Skeleton height={30} width={240} />}
-        subtitle={shown ? <DashboardDetails dashboard={shown} timeZone={business.timeZone} layoutLabel={GRID_LABELS[desktop ? 'desktop' : 'mobile']} /> : undefined}
+        subtitle={
+          shown ? (
+            <DashboardDetails
+              dashboard={shown}
+              // An older revision's own save, not the dashboard's latest one.
+              saved={olderSummary ? { at: olderSummary.createdAt, by: olderSummary.createdBy } : older === null ? { at: shown.updatedAt, by: shown.updatedBy } : null}
+              timeZone={business.timeZone}
+              layoutLabel={GRID_LABELS[desktop ? 'desktop' : 'mobile']}
+            />
+          ) : undefined
+        }
       >
         {shown && (
           <div className="saved-actions">
@@ -198,16 +208,28 @@ export function DashboardViewPage({ dashboardId, context, href }: PageProps & { 
 }
 
 /** "4 charts · Desktop layout · Revision 3 · Saved Oct 2, 2026, 8:00 AM by Ana" */
-function DashboardDetails({ dashboard, timeZone, layoutLabel }: { dashboard: Dashboard; timeZone: string; layoutLabel: string }) {
+function DashboardDetails({
+  dashboard,
+  saved,
+  timeZone,
+  layoutLabel,
+}: {
+  dashboard: Dashboard
+  saved: { at: string; by: string | null } | null
+  timeZone: string
+  layoutLabel: string
+}) {
   return (
     <span className="saved-details">
       <span>{widgetCountLabel(dashboard.layout.widgets.length)}</span>
       <span>{layoutLabel} layout</span>
       <span>Revision {dashboard.revision}</span>
-      <span>
-        Saved {formatDateTimeLong(dashboard.updatedAt, timeZone)}
-        {dashboard.updatedBy && ` by ${dashboard.updatedBy}`}
-      </span>
+      {saved && (
+        <span>
+          Saved {formatDateTimeLong(saved.at, timeZone)}
+          {saved.by && ` by ${saved.by}`}
+        </span>
+      )}
     </span>
   )
 }
