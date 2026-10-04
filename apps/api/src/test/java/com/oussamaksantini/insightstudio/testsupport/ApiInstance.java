@@ -34,6 +34,12 @@ public final class ApiInstance implements AutoCloseable {
         // No emails leave unless a test asks for a worker (and never to a developer's local Mailpit).
         properties.put("insight.mail.outbox.enabled", false);
         properties.put("spring.mail.port", 9);
+        // Like the shared test context: Free limits at the absolute caps unless a test sets its own.
+        properties.put("insight.billing.plans.free.limits.members", 100000);
+        properties.put("insight.billing.plans.free.limits.stores", 100000);
+        properties.put("insight.billing.plans.free.limits.charts", 200);
+        properties.put("insight.billing.plans.free.limits.dashboards", 50);
+        properties.put("insight.billing.plans.free.limits.imports-per-month", 100000);
         properties.putAll(extraProperties);
         // Command-line arguments: they take precedence over application.properties (builder
         // properties would only be defaults).

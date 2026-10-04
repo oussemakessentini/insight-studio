@@ -1,5 +1,7 @@
 package com.oussamaksantini.insightstudio.store;
 
+import com.oussamaksantini.insightstudio.billing.PlanLimits;
+import com.oussamaksantini.insightstudio.billing.PlanResource;
 import com.oussamaksantini.insightstudio.business.Business;
 import com.oussamaksantini.insightstudio.common.web.ApiException;
 import com.oussamaksantini.insightstudio.dashboard.DashboardService;
@@ -39,12 +41,15 @@ public class StoreService {
     private final StoreRepository stores;
     private final StoreQueries queries;
     private final DashboardService dashboard;
+    private final PlanLimits planLimits;
 
-    StoreService(ReportingContext reporting, StoreRepository stores, StoreQueries queries, DashboardService dashboard) {
+    StoreService(ReportingContext reporting, StoreRepository stores, StoreQueries queries, DashboardService dashboard,
+            PlanLimits planLimits) {
         this.reporting = reporting;
         this.stores = stores;
         this.queries = queries;
         this.dashboard = dashboard;
+        this.planLimits = planLimits;
     }
 
     /** Every store of the business; the global store filter does not apply here. */
@@ -109,7 +114,7 @@ public class StoreService {
         return dashboard.topProducts(from, to, storeId, limit);
     }
 
-    /** ADMIN+: adds a store to the current business; 409 when the code is taken there. */
+    /** ADMIN+: adds a store to the current business; 409 when the code is taken there or the plan is full. */
     @Transactional
     public StoreInfo create(String code, String name, String city) {
         Business business = reporting.currentBusiness(Role.ADMIN);
@@ -117,6 +122,7 @@ public class StoreService {
         String cleanCode = StoreFields.code(code);
         String cleanName = StoreFields.name(name);
         String cleanCity = StoreFields.city(city);
+        planLimits.requireRoom(business.getId(), PlanResource.STORES);
         long id = queries.insertStore(business.getId(), cleanCode, cleanName, cleanCity)
                 .orElseThrow(() -> ApiException.conflict("A store with code '%s' already exists.".formatted(cleanCode)));
         return new StoreInfo(id, cleanCode, cleanName, cleanCity);

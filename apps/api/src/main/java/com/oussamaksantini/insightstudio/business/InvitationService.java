@@ -6,6 +6,8 @@ import com.oussamaksantini.insightstudio.account.EmailVerificationService;
 import com.oussamaksantini.insightstudio.account.UserQueries;
 import com.oussamaksantini.insightstudio.audit.AuditAction;
 import com.oussamaksantini.insightstudio.audit.AuditLog;
+import com.oussamaksantini.insightstudio.billing.PlanLimits;
+import com.oussamaksantini.insightstudio.billing.PlanResource;
 import com.oussamaksantini.insightstudio.business.InvitationQueries.InvitationRow;
 import com.oussamaksantini.insightstudio.business.dto.BusinessResponse;
 import com.oussamaksantini.insightstudio.business.dto.InvitationPreviewResponse;
@@ -71,6 +73,7 @@ public class InvitationService {
     private final TransactionTemplate transactions;
     private final EmailVerificationService verification;
     private final AuditLog audit;
+    private final PlanLimits planLimits;
     private final SecureRandom random = new SecureRandom();
 
     InvitationService(
@@ -83,7 +86,8 @@ public class InvitationService {
             RateLimiter limits,
             TransactionTemplate transactions,
             EmailVerificationService verification,
-            AuditLog audit) {
+            AuditLog audit,
+            PlanLimits planLimits) {
         this.invitations = invitations;
         this.businesses = businesses;
         this.memberships = memberships;
@@ -94,6 +98,7 @@ public class InvitationService {
         this.transactions = transactions;
         this.verification = verification;
         this.audit = audit;
+        this.planLimits = planLimits;
     }
 
     /** ADMIN+: the business's open invitations. */
@@ -124,6 +129,8 @@ public class InvitationService {
                 throw ApiException.conflict("This person is already a member.");
             }
             invitations.revokeUnfinishedFor(businessId, cleanEmail);
+            // An open invitation reserves a seat: members plus open invitations must stay within the plan.
+            planLimits.requireRoom(businessId, PlanResource.MEMBERS);
             if (invitations.countOpen(businessId) >= MAX_OPEN_PER_BUSINESS) {
                 throw ApiException.conflict(
                         "This business has %d open invitations; revoke some first.".formatted(MAX_OPEN_PER_BUSINESS));
@@ -182,6 +189,11 @@ public class InvitationService {
                 throw ApiException.forbidden(WRONG_ACCOUNT);
             }
             businesses.lockBusiness(invitation.businessId());
+            if (memberships.role(user.id(), invitation.businessId()).isPresent()) {
+                throw ApiException.conflict("You're already a member of this business.");
+            }
+            // Refused while the members alone fill the plan (e.g. after a downgrade); the link stays usable.
+            planLimits.requireSeatForAcceptance(invitation.businessId());
             if (!businesses.insertMembership(user.id(), invitation.businessId(), invitation.role())) {
                 throw ApiException.conflict("You're already a member of this business.");
             }

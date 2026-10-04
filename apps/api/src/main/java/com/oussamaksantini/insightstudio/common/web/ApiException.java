@@ -1,8 +1,12 @@
 package com.oussamaksantini.insightstudio.common.web;
 
+import java.util.Map;
 import org.springframework.http.HttpStatus;
 
-/** An error whose message is safe to show to API clients. */
+/**
+ * An error whose message is safe to show to API clients. Subclasses may add properties to the
+ * problem detail ({@link #getProperties()}), e.g. the {@code code} of a plan limit refusal.
+ */
 public class ApiException extends RuntimeException {
 
     private final HttpStatus status;
@@ -14,6 +18,11 @@ public class ApiException extends RuntimeException {
 
     public HttpStatus getStatus() {
         return status;
+    }
+
+    /** Extra members of the problem detail (plain values only); none by default. */
+    public Map<String, Object> getProperties() {
+        return Map.of();
     }
 
     public static ApiException badRequest(String detail) {

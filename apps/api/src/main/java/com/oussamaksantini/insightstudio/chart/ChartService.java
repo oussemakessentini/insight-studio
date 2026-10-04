@@ -2,6 +2,8 @@ package com.oussamaksantini.insightstudio.chart;
 
 import com.oussamaksantini.insightstudio.audit.AuditAction;
 import com.oussamaksantini.insightstudio.audit.AuditLog;
+import com.oussamaksantini.insightstudio.billing.PlanLimits;
+import com.oussamaksantini.insightstudio.billing.PlanResource;
 import com.oussamaksantini.insightstudio.business.Business;
 import com.oussamaksantini.insightstudio.chart.ChartEngine.ChartFigures;
 import com.oussamaksantini.insightstudio.chart.ChartEngine.ChartQuery;
@@ -65,6 +67,7 @@ public class ChartService {
     private final ChartResults results;
     private final PeriodResolver periods;
     private final AuditLog audit;
+    private final PlanLimits planLimits;
 
     ChartService(
             CurrentBusiness current,
@@ -75,7 +78,8 @@ public class ChartService {
             ChartEngines engines,
             ChartResults results,
             PeriodResolver periods,
-            AuditLog audit) {
+            AuditLog audit,
+            PlanLimits planLimits) {
         this.current = current;
         this.reporting = reporting;
         this.queries = queries;
@@ -85,6 +89,7 @@ public class ChartService {
         this.results = results;
         this.periods = periods;
         this.audit = audit;
+        this.planLimits = planLimits;
     }
 
     public ChartCatalogResponse catalog() {
@@ -254,6 +259,7 @@ public class ChartService {
             throw ApiException.conflict("A business can have at most %d charts. Delete one before adding another."
                     .formatted(ChartRules.MAX_CHARTS));
         }
+        planLimits.requireRoom(business.getId(), PlanResource.CHARTS);
         if (checkTitle && queries.titleTaken(business.getId(), definition.title(), null)) {
             throw titleConflict(definition.title());
         }
