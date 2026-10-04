@@ -23,8 +23,10 @@ import org.springframework.transaction.support.TransactionTemplate;
  *       they were used or expired;</li>
  *   <li>invitations closed (accepted, revoked or expired) for more than
  *       {@code insight.retention.invitation-days} (400); open invitations are never purged;</li>
- *   <li>billing webhook events finished (processed or ignored) and subscription cancellations done
- *       more than {@code insight.retention.billing-days} (30) ago; pending ones are never purged.</li>
+ *   <li>billing webhook events finished (processed or ignored), subscription cancellations done and
+ *       provider operations finished more than {@code insight.retention.billing-days} (30) ago; pending
+ *       ones are never purged (checkout and customer calls pending over a day are abandoned first:
+ *       their idempotency key can no longer be reused). Expired subscription leases.</li>
  * </ul>
  */
 @Component
@@ -105,6 +107,21 @@ public class RetentionJob {
                     DELETE FROM billing_cancellations
                     WHERE status = 'DONE' AND finished_at < now() - make_interval(days => :days)
                     """, billing));
+            // Provider calls whose key can no longer be reused (Stripe keeps keys 24 hours) are abandoned
+            // first, so they are purged like finished ones; pending expiries are never touched.
+            jdbc.update("""
+                    UPDATE billing_operations
+                    SET status = 'ABANDONED', finished_at = now(), updated_at = now(),
+                        last_error = COALESCE(last_error, 'Idempotency key too old to reuse')
+                    WHERE status = 'PENDING' AND kind IN ('create_customer', 'create_checkout')
+                      AND created_at < now() - interval '1 day'
+                    """, Map.of());
+            deleted.put("billingOperations", jdbc.update("""
+                    DELETE FROM billing_operations
+                    WHERE status <> 'PENDING' AND finished_at < now() - make_interval(days => :days)
+                    """, billing));
+            deleted.put("billingLeases", jdbc.update(
+                    "DELETE FROM billing_subscription_leases WHERE locked_until < now() - interval '1 hour'", Map.of()));
         });
         log.info("Retention purge: {}", deleted);
         return deleted;

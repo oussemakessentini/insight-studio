@@ -2,7 +2,9 @@ package com.oussamaksantini.insightstudio.billing;
 
 import com.oussamaksantini.insightstudio.account.AccountPrincipal;
 import com.oussamaksantini.insightstudio.account.AccountProperties;
+import com.oussamaksantini.insightstudio.billing.BillingOperations.Operation;
 import com.oussamaksantini.insightstudio.billing.BillingProvider.BillingUnavailableException;
+import com.oussamaksantini.insightstudio.billing.BillingProvider.CheckoutSession;
 import com.oussamaksantini.insightstudio.billing.BillingQueries.SubscriptionRow;
 import com.oussamaksantini.insightstudio.business.BusinessService;
 import com.oussamaksantini.insightstudio.business.MemberAccess;
@@ -14,7 +16,7 @@ import java.time.Instant;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
+import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -27,6 +29,9 @@ import org.springframework.transaction.support.TransactionTemplate;
  * With billing off ({@code provider=none}) and for the configured public demo business, every billing
  * endpoint is a 404. Checkout and portal need a verified OWNER; their return addresses come only from
  * configuration ({@code WEB_BASE_URL}), never from the request.
+ *
+ * <p>No database transaction is open while the provider is called: checks and the operation records
+ * ({@link BillingOperations}) are written in short transactions before and after each call.
  */
 @Service
 public class BillingService {
@@ -45,17 +50,19 @@ public class BillingService {
     private final MemberAccess access;
     private final PublicDemo demo;
     private final AccountProperties web;
+    private final BillingOperations operations;
     private final TransactionTemplate transactions;
     private final TransactionTemplate readOnly;
 
     BillingService(BillingPlans plans, BillingQueries queries, BillingProvider provider, MemberAccess access,
-            PublicDemo demo, AccountProperties web, PlatformTransactionManager manager) {
+            PublicDemo demo, AccountProperties web, BillingOperations operations, PlatformTransactionManager manager) {
         this.plans = plans;
         this.queries = queries;
         this.provider = provider;
         this.access = access;
         this.demo = demo;
         this.web = web;
+        this.operations = operations;
         this.transactions = new TransactionTemplate(manager);
         this.readOnly = new TransactionTemplate(manager);
         this.readOnly.setReadOnly(true);
@@ -114,31 +121,93 @@ public class BillingService {
         requireNotDemo(businessId);
         Plan plan = plans.purchasable(planKey == null ? null : planKey.strip())
                 .orElseThrow(() -> ApiException.badRequest("'plan' must be a paid plan, e.g. \"pro\"."));
-        String url;
+        String name = provider.name();
+        // 1. Short transaction: the checks, and the customer to create if the business has none yet.
+        Prepared prepared = transactions.execute(status -> {
+            SubscriptionRow row = queries.lockOrCreate(businessId, name);
+            Plan current = plans.effective(row.provider(), row.plan(), row.status());
+            if (!current.key().equals(BillingPlans.FREE)) {
+                throw ApiException.conflict("This business is already on the %s plan. Use Manage billing to change it."
+                        .formatted(current.name()));
+            }
+            String customer = row.provider().equals(name) ? row.customerId() : null;
+            if (customer != null) {
+                return new Prepared(customer, null, null);
+            }
+            String businessName = queries.businessName(businessId).orElseThrow(() -> ApiException.notFound(BusinessService.NOT_FOUND));
+            return new Prepared(null, operations.pendingOrNew(businessId, name, BillingOperations.CREATE_CUSTOMER, null, null),
+                    businessName);
+        });
+        CheckoutSession session;
         try {
-            url = transactions.execute(status -> {
-                // Locks the business's billing row: one checkout (and one customer) at a time.
-                SubscriptionRow row = queries.lockOrCreate(businessId, provider.name());
-                Plan current = plans.effective(row.provider(), row.plan(), row.status());
-                if (!current.key().equals(BillingPlans.FREE)) {
-                    throw ApiException.conflict("This business is already on the %s plan. Use Manage billing to change it."
-                            .formatted(current.name()));
+            String customer = prepared.customer() != null ? prepared.customer() : createCustomer(businessId, prepared);
+            String linked = customer;
+            // 2. The checkout, recorded before the call; a timed-out attempt is retried with the same key.
+            Operation checkoutOp = transactions.execute(status -> operations.pendingOrNew(businessId, name,
+                    BillingOperations.CREATE_CHECKOUT, plan.key(), linked));
+            CheckoutSession created = call(checkoutOp, () -> provider.createCheckout(businessId, linked, plan,
+                    web.page(SUCCESS_PATH), web.page(CANCELED_PATH), checkoutOp.idempotencyKey()));
+            session = created;
+            // 3. Short transaction: completed, unless the business was deleted meanwhile; then the session
+            //    just created must never be paid, and is queued for expiry.
+            boolean live = Boolean.TRUE.equals(transactions.execute(status -> {
+                boolean exists = queries.lockBusiness(businessId);
+                Operation op = operations.lock(checkoutOp.id()).orElseThrow();
+                if (!exists || "ABANDONED".equals(op.status())) {
+                    operations.abandoned(op.id(), "Business deleted while its checkout was created", created.id());
+                    operations.queueExpiry(businessId, name, created.id());
+                    return false;
                 }
-                String customer = row.provider().equals(provider.name()) ? row.customerId() : null;
-                if (customer == null) {
-                    String name = queries.businessName(businessId).orElseThrow(() -> ApiException.notFound(BusinessService.NOT_FOUND));
-                    customer = provider.createCustomer(businessId, name, "insight-customer-" + UUID.randomUUID());
-                    queries.setCustomer(businessId, provider.name(), customer);
-                }
-                return provider.createCheckout(businessId, customer, plan, web.page(SUCCESS_PATH), web.page(CANCELED_PATH),
-                        "insight-checkout-" + UUID.randomUUID());
-            });
+                operations.succeeded(op.id(), null, created.id());
+                return true;
+            }));
+            if (!live) {
+                log.info("Business {} was deleted while its checkout was created; checkout queued for expiry.", businessId);
+                throw ApiException.notFound(BusinessService.NOT_FOUND);
+            }
         } catch (BillingUnavailableException e) {
             log.warn("Checkout for business {} failed: {}", businessId, e.getMessage());
             throw new ServiceUnavailableException(UNAVAILABLE, 30);
         }
         log.info("Account {} started a {} checkout for business {}.", caller.userId(), plan.key(), businessId);
-        return new UrlResponse(url);
+        return new UrlResponse(session.url());
+    }
+
+    /** What the checkout's first transaction found: the linked customer, or the operation creating one. */
+    private record Prepared(String customer, Operation customerOp, String businessName) {
+    }
+
+    /** Creates the business's provider customer (outside any transaction) and links it in a short one. */
+    private String createCustomer(long businessId, Prepared prepared) {
+        Operation op = prepared.customerOp();
+        String created = call(op, () -> provider.createCustomer(businessId, prepared.businessName(), op.idempotencyKey()));
+        String linked = transactions.execute(status -> {
+            if (!queries.lockBusiness(businessId)) {
+                operations.abandoned(op.id(), "Business deleted while its customer was created", null);
+                return null;
+            }
+            operations.succeeded(op.id(), created, null);
+            SubscriptionRow row = queries.lockOrCreate(businessId, provider.name());
+            if (row.provider().equals(provider.name()) && row.customerId() != null) {
+                return row.customerId();   // a concurrent request linked one first (same key: the same customer)
+            }
+            queries.setCustomer(businessId, provider.name(), created);
+            return created;
+        });
+        if (linked == null) {
+            throw ApiException.notFound(BusinessService.NOT_FOUND);
+        }
+        return linked;
+    }
+
+    /** Runs one provider call of an operation; a failure is recorded on the operation (own short statement). */
+    private <T> T call(Operation op, Supplier<T> request) {
+        try {
+            return request.get();
+        } catch (BillingUnavailableException e) {
+            operations.failed(op.id(), BillingEventWorker.describe(e), e.retrySameKey());
+            throw e;
+        }
     }
 
     /** Verified OWNER: opens the provider's billing portal. 409 when the business has no billing account yet. */

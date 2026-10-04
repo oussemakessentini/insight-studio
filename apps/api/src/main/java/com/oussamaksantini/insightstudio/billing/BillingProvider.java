@@ -8,6 +8,11 @@ import java.util.Optional;
  * or {@link NoBillingProvider}. Every call that reaches the provider throws
  * {@link BillingUnavailableException} when it cannot be completed (network, provider error), so callers
  * answer {@code 503} or retry later.
+ *
+ * <p>Calls go over the network: callers never make them inside a database transaction (they would hold
+ * row locks and a pooled connection for as long as the provider takes). Calls that create something
+ * carry an idempotency key recorded beforehand in {@code billing_operations}, so a retry after a timeout
+ * returns what the first attempt may already have created.
  */
 public interface BillingProvider {
 
@@ -17,9 +22,15 @@ public interface BillingProvider {
     /** Creates the provider customer of a business; returns its id. */
     String createCustomer(long businessId, String businessName, String idempotencyKey);
 
-    /** Starts a checkout of {@code plan} for the customer; returns the page to send the owner to. */
-    String createCheckout(long businessId, String customerId, Plan plan, String successUrl, String cancelUrl,
+    /** Starts a checkout of {@code plan} for the customer; returns its id and the page to send the owner to. */
+    CheckoutSession createCheckout(long businessId, String customerId, Plan plan, String successUrl, String cancelUrl,
             String idempotencyKey);
+
+    /**
+     * Expires an open checkout session so it can no longer be paid. Idempotent: a session that is already
+     * expired, complete or unknown is done.
+     */
+    void expireCheckout(String checkoutId);
 
     /** Opens the customer's billing portal; returns the page to send the owner to. */
     String createPortal(long businessId, String customerId, String returnUrl);
@@ -53,6 +64,10 @@ public interface BillingProvider {
     record CheckoutState(String id, String subscriptionId, String customerId, Long businessId) {
     }
 
+    /** A checkout session just created: its id and the page to send the owner to. */
+    record CheckoutSession(String id, String url) {
+    }
+
     /**
      * A verified webhook event's references (never its payload).
      *
@@ -62,15 +77,33 @@ public interface BillingProvider {
             String subscriptionId, String customerId, Long businessId) {
     }
 
-    /** The provider could not be reached or answered with an error. Its message never holds a secret. */
+    /**
+     * The provider could not be reached or answered with an error. Its message never holds a secret.
+     * {@link #retrySameKey()}: whether the outcome is unknown (timeout, connection error) or the provider
+     * did not record the request (a conflicting concurrent request, a rate limit), so a retry must reuse the
+     * same idempotency key; {@code false} when the provider answered with an error it keeps for that key
+     * (Stripe replays the first result of a key, errors included), so a retry needs a new key.
+     */
     class BillingUnavailableException extends RuntimeException {
 
+        private final boolean retrySameKey;
+
         public BillingUnavailableException(String message) {
+            this(message, true);
+        }
+
+        public BillingUnavailableException(String message, boolean retrySameKey) {
             super(message);
+            this.retrySameKey = retrySameKey;
         }
 
         public BillingUnavailableException(String message, Throwable cause) {
             super(message, cause);
+            this.retrySameKey = true;
+        }
+
+        public boolean retrySameKey() {
+            return retrySameKey;
         }
     }
 

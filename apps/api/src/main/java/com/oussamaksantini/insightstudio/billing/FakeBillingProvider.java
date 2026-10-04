@@ -91,15 +91,59 @@ public class FakeBillingProvider implements BillingProvider {
 
     @Override
     public String createCustomer(long businessId, String businessName, String idempotencyKey) {
-        ObjectNode customer = object("cus_fake_", "customer");
-        customer.putObject("metadata").put("business_id", Long.toString(businessId));
-        insert("customer", customer);
-        return customer.get("id").asString();
+        return transactions.execute(status -> idempotent(idempotencyKey, () -> {
+            ObjectNode customer = object("cus_fake_", "customer");
+            customer.putObject("metadata").put("business_id", Long.toString(businessId));
+            insert("customer", customer);
+            return customer.get("id").asString();
+        }));
+    }
+
+    /**
+     * Like Stripe: the first request with a key creates the object and records it; a later request with the
+     * same key returns that object instead of creating another one.
+     */
+    private String idempotent(String key, java.util.function.Supplier<String> create) {
+        if (key == null || key.isBlank()) {
+            return create.get();
+        }
+        String id = "idem_" + key;
+        // Serialises requests with the same key (a concurrent retry waits for the first to finish).
+        jdbc.query("SELECT pg_advisory_xact_lock(hashtextextended(:k, 0))", Map.of("k", id),
+                (org.springframework.jdbc.core.ResultSetExtractor<Void>) rs -> null);
+        Optional<String> earlier = jdbc.queryForList(
+                "SELECT data ->> 'object_id' FROM fake_billing_objects WHERE id = :id AND kind = 'idempotency'",
+                Map.of("id", id), String.class).stream().findFirst();
+        if (earlier.isPresent()) {
+            return earlier.get();
+        }
+        String created = create.get();
+        ObjectNode record = StripeObjects.JSON.createObjectNode();
+        record.put("id", id);
+        record.put("object_id", created);
+        insert("idempotency", record);
+        return created;
     }
 
     @Override
-    public String createCheckout(long businessId, String customerId, Plan plan, String successUrl, String cancelUrl,
+    public CheckoutSession createCheckout(long businessId, String customerId, Plan plan, String successUrl, String cancelUrl,
             String idempotencyKey) {
+        String id = transactions.execute(status -> idempotent(idempotencyKey,
+                () -> newCheckout(businessId, customerId, plan, successUrl, cancelUrl)));
+        return new CheckoutSession(id, web.page("/billing/fake/checkout/" + id));
+    }
+
+    @Override
+    public void expireCheckout(String checkoutId) {
+        transactions.executeWithoutResult(status -> load(checkoutId, "checkout", true).ifPresent(checkout -> {
+            if ("open".equals(checkout.path("status").asString())) {
+                checkout.put("status", "expired");
+                save(checkout);
+            }
+        }));
+    }
+
+    private String newCheckout(long businessId, String customerId, Plan plan, String successUrl, String cancelUrl) {
         ObjectNode checkout = object("cs_fake_", "checkout.session");
         checkout.put("mode", "subscription");
         checkout.put("status", "open");
@@ -113,7 +157,7 @@ public class FakeBillingProvider implements BillingProvider {
         checkout.put("price", plans.priceId(plan));
         checkout.put("declined", false);
         insert("checkout", checkout);
-        return web.page("/billing/fake/checkout/" + checkout.get("id").asString());
+        return checkout.get("id").asString();
     }
 
     @Override
@@ -202,6 +246,9 @@ public class FakeBillingProvider implements BillingProvider {
                 return new Outcome(checkout.path("cancel_url").asString(), List.of());
             }
             case "pay", "decline" -> {
+                if (state.equals("expired")) {
+                    throw ApiException.conflict("This test checkout has expired.");
+                }
                 if (!state.equals("open")) {
                     throw ApiException.conflict("This test checkout is already complete.");
                 }

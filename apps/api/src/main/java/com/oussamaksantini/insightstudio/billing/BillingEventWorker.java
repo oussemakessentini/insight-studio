@@ -10,10 +10,10 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.jdbc.core.ResultSetExtractor;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -154,20 +154,74 @@ public class BillingEventWorker {
                 return;
             }
             String id = subscriptionId;
-            transactions.executeWithoutResult(status -> {
-                // One subscription at a time: the state fetched below is the one written, never an older one.
-                jdbc.query("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))",
-                        Map.of("key", "billing-subscription:" + provider.name() + ":" + id), (ResultSetExtractor<Void>) rs -> null);
-                Optional<SubscriptionState> state = provider.fetchSubscription(id);
-                Result result = state.isEmpty() ? Result.ignored("Unknown subscription") : apply(event, state.get());
-                finish(event, result);
-            });
+            // One subscription at a time, across instances: the state fetched below is the one written,
+            // never an older one. A lease (not a transaction) so that nothing is held open in the database
+            // while the provider answers.
+            UUID holder = UUID.randomUUID();
+            if (!acquireLease(id, holder)) {
+                retrySoon(event);
+                return;
+            }
+            try {
+                Optional<SubscriptionState> state = provider.fetchSubscription(id);   // no transaction open
+                transactions.executeWithoutResult(status -> {
+                    if (!leaseHeld(id, holder)) {
+                        throw new IllegalStateException("Lost the subscription's lease while fetching it");
+                    }
+                    Result result = state.isEmpty() ? Result.ignored("Unknown subscription") : apply(event, state.get());
+                    finish(event, result);
+                });
+            } finally {
+                releaseLease(id, holder);
+            }
         } catch (RuntimeException e) {
             failed(event, describe(e));
         }
     }
 
-    /** Writes the subscription's state to its business (inside the subscription's lock). */
+    /** Takes the subscription's lease (free or expired); returns whether this worker holds it now. */
+    private boolean acquireLease(String subscriptionId, UUID holder) {
+        return !jdbc.queryForList("""
+                INSERT INTO billing_subscription_leases (provider, subscription_id, holder, locked_until)
+                VALUES (:p, :s, :h, now() + make_interval(secs => :lease))
+                ON CONFLICT (provider, subscription_id) DO UPDATE
+                    SET holder = EXCLUDED.holder, locked_until = EXCLUDED.locked_until
+                    WHERE billing_subscription_leases.locked_until < now()
+                RETURNING holder
+                """, leaseParams(subscriptionId, holder).addValue("lease", settings.lease().toSeconds()), UUID.class).isEmpty();
+    }
+
+    /**
+     * In the writing transaction: whether this worker still holds the lease. The row lock keeps anyone from
+     * taking it over (an expired lease is taken by an UPDATE) until the write commits.
+     */
+    private boolean leaseHeld(String subscriptionId, UUID holder) {
+        return !jdbc.queryForList("""
+                SELECT holder FROM billing_subscription_leases
+                WHERE provider = :p AND subscription_id = :s AND holder = :h AND locked_until > now()
+                FOR UPDATE
+                """, leaseParams(subscriptionId, holder), UUID.class).isEmpty();
+    }
+
+    private void releaseLease(String subscriptionId, UUID holder) {
+        jdbc.update("DELETE FROM billing_subscription_leases WHERE provider = :p AND subscription_id = :s AND holder = :h",
+                leaseParams(subscriptionId, holder));
+    }
+
+    private MapSqlParameterSource leaseParams(String subscriptionId, UUID holder) {
+        return new MapSqlParameterSource().addValue("p", provider.name()).addValue("s", subscriptionId).addValue("h", holder);
+    }
+
+    /** Another worker is handling the same subscription: try again shortly (not counted as a failure). */
+    private void retrySoon(Claimed event) {
+        jdbc.update("""
+                UPDATE billing_events
+                SET attempts = GREATEST(attempts - 1, 0), locked_until = NULL, next_attempt_at = now() + interval '2 seconds'
+                WHERE id = :id
+                """, new MapSqlParameterSource().addValue("id", event.id()));
+    }
+
+    /** Writes the subscription's state to its business (while holding the subscription's lease). */
     private Result apply(Claimed event, SubscriptionState state) {
         String name = provider.name();
         if (state.livemode()) {

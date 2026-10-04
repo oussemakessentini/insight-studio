@@ -86,7 +86,7 @@ final class StripeBillingProvider implements BillingProvider {
     }
 
     @Override
-    public String createCheckout(long businessId, String customerId, Plan plan, String successUrl, String cancelUrl,
+    public CheckoutSession createCheckout(long businessId, String customerId, Plan plan, String successUrl, String cancelUrl,
             String idempotencyKey) {
         Map<String, String> form = new LinkedHashMap<>();
         form.put("mode", "subscription");
@@ -98,7 +98,26 @@ final class StripeBillingProvider implements BillingProvider {
         form.put("subscription_data[metadata][business_id]", Long.toString(businessId));
         form.put("success_url", successUrl);
         form.put("cancel_url", cancelUrl);
-        return requireUrl(post("/v1/checkout/sessions", form, idempotencyKey), "checkout session");
+        JsonNode session = post("/v1/checkout/sessions", form, idempotencyKey);
+        return new CheckoutSession(requireId(session, "checkout session"), requireUrl(session, "checkout session"));
+    }
+
+    @Override
+    public void expireCheckout(String checkoutId) {
+        // No idempotency key: expiring twice is harmless (the second answer is an error we treat as done),
+        // while a key would replay a first 5xx forever.
+        Answer answer = send(HttpMethod.POST, "/v1/checkout/sessions/" + checkId(checkoutId) + "/expire", Map.of(), null);
+        if (answer.ok() || answer.missing()) {
+            return;
+        }
+        if (answer.status() >= 400 && answer.status() < 500) {
+            // Not expirable: done unless the session is somehow still open.
+            Optional<JsonNode> session = get("/v1/checkout/sessions/" + checkId(checkoutId));
+            if (session.isEmpty() || !"open".equals(session.get().path("status").asString(""))) {
+                return;
+            }
+        }
+        throw answer.failure("expire checkout session");
     }
 
     @Override
@@ -159,8 +178,12 @@ final class StripeBillingProvider implements BillingProvider {
         }
 
         BillingUnavailableException failure(String action) {
+            // Stripe does not record a request that conflicted with a concurrent one using the same key
+            // (409 idempotency_key_in_use) or that was rate limited (429): retry with the same key. Any
+            // other answer is replayed for that key: a retry needs a new one.
+            boolean sameKey = status == 409 && "idempotency_error".equals(errorType) || status == 429;
             return new BillingUnavailableException("Stripe could not %s: HTTP %d%s".formatted(action, status,
-                    errorType == null ? "" : " (" + errorType + (errorCode == null ? "" : "/" + errorCode) + ")"));
+                    errorType == null ? "" : " (" + errorType + (errorCode == null ? "" : "/" + errorCode) + ")"), sameKey);
         }
     }
 
@@ -239,7 +262,7 @@ final class StripeBillingProvider implements BillingProvider {
     private static String requireId(JsonNode body, String what) {
         String id = StripeObjects.id(body.get("id"));
         if (id == null) {
-            throw new BillingUnavailableException("Stripe returned a " + what + " without an id.");
+            throw new BillingUnavailableException("Stripe returned a " + what + " without an id.", false);
         }
         return id;
     }
@@ -247,7 +270,7 @@ final class StripeBillingProvider implements BillingProvider {
     private static String requireUrl(JsonNode body, String what) {
         JsonNode url = body.get("url");
         if (url == null || !url.isString() || !url.asString().startsWith("https://")) {
-            throw new BillingUnavailableException("Stripe returned a " + what + " without an https URL.");
+            throw new BillingUnavailableException("Stripe returned a " + what + " without an https URL.", false);
         }
         return url.asString();
     }

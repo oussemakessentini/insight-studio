@@ -18,11 +18,13 @@ public class BillingDeletion {
     private final BillingQueries queries;
     private final BillingPlans plans;
     private final NamedParameterJdbcTemplate jdbc;
+    private final BillingOperations operations;
 
-    BillingDeletion(BillingQueries queries, BillingPlans plans, NamedParameterJdbcTemplate jdbc) {
+    BillingDeletion(BillingQueries queries, BillingPlans plans, NamedParameterJdbcTemplate jdbc, BillingOperations operations) {
         this.queries = queries;
         this.plans = plans;
         this.jdbc = jdbc;
+        this.operations = operations;
     }
 
     /**
@@ -46,12 +48,15 @@ public class BillingDeletion {
 
     /**
      * In the deletion's transaction (after the business row is locked): queues the cancellation of the
-     * business's subscription unless it has already ended. Returns whether one was queued.
+     * business's subscription unless it has already ended, and the expiry of every checkout session of the
+     * business that may still be open (provider calls still in flight are abandoned: the request running
+     * one queues its session for expiry when it completes). Returns whether a cancellation was queued.
      */
     public boolean onBusinessDeleted(long businessId) {
         if (!TransactionSynchronizationManager.isActualTransactionActive()) {
             throw new IllegalStateException("Cancellations are queued in the deletion's transaction.");
         }
+        operations.onBusinessDeleted(businessId);
         Optional<SubscriptionRow> row = queries.subscription(businessId, true).filter(BillingDeletion::live);
         if (row.isEmpty()) {
             return false;

@@ -132,7 +132,8 @@ class StripeBillingProviderTest {
         assertThat(stripe.createCustomer(42, "Corner & Co", "key-1")).isEqualTo("cus_123");
         Plan pro = plans("stripe").find("pro").orElseThrow();
         assertThat(stripe.createCheckout(42, "cus_123", pro, "https://app/settings/billing?checkout=success",
-                "https://app/settings/billing?checkout=canceled", "key-2")).isEqualTo("https://checkout.stripe.com/c/pay/cs_test_1");
+                "https://app/settings/billing?checkout=canceled", "key-2"))
+                .isEqualTo(new BillingProvider.CheckoutSession("cs_test_1", "https://checkout.stripe.com/c/pay/cs_test_1"));
         assertThat(stripe.createPortal(42, "cus_123", "https://app/settings/billing"))
                 .isEqualTo("https://billing.stripe.com/p/session/bps_1");
 

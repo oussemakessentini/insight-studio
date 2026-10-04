@@ -82,6 +82,9 @@ abstract class BillingIntegrationTest {
     BillingProperties properties;
 
     @Autowired
+    BillingOperations operations;
+
+    @Autowired
     BillingEventWorker eventWorker;
 
     @Autowired

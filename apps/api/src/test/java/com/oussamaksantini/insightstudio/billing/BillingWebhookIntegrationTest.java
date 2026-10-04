@@ -404,8 +404,13 @@ class BillingWebhookIntegrationTest extends BillingIntegrationTest {
         }
 
         @Override
-        public String createCheckout(long businessId, String customerId, Plan plan, String successUrl, String cancelUrl,
+        public CheckoutSession createCheckout(long businessId, String customerId, Plan plan, String successUrl, String cancelUrl,
                 String idempotencyKey) {
+            throw down();
+        }
+
+        @Override
+        public void expireCheckout(String checkoutId) {
             throw down();
         }
 

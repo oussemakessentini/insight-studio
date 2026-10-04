@@ -67,7 +67,7 @@ class BillingDeletionIntegrationTest extends BillingIntegrationTest {
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM business_subscriptions", Long.class)).isZero();
 
         // The provider is down: retried with backoff, never given up.
-        BillingCancellationWorker broken = new BillingCancellationWorker(named, new FailingProvider(provider), properties);
+        BillingCancellationWorker broken = new BillingCancellationWorker(named, new FailingProvider(provider), properties, operations);
         for (int attempt = 1; attempt <= 3; attempt++) {
             assertThat(broken.processDue()).isEqualTo(1);
             Map<String, Object> pending = jdbc.queryForMap("""
@@ -83,7 +83,7 @@ class BillingDeletionIntegrationTest extends BillingIntegrationTest {
         assertThat(fakeStatus(subscription)).isEqualTo("active");
 
         // A new worker with the provider back cancels it.
-        BillingCancellationWorker restarted = new BillingCancellationWorker(named, provider, properties);
+        BillingCancellationWorker restarted = new BillingCancellationWorker(named, provider, properties, operations);
         assertThat(restarted.processDue()).isEqualTo(1);
         assertThat(jdbc.queryForObject("SELECT status FROM billing_cancellations", String.class)).isEqualTo("DONE");
         assertThat(fakeStatus(subscription)).isEqualTo("canceled");

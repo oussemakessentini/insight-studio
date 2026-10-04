@@ -16,6 +16,10 @@ import org.springframework.stereotype.Component;
  * {@code FOR UPDATE SKIP LOCKED} on any instance, retried with backoff (30 s doubling to 1 h) until the
  * provider confirms; an already canceled or unknown subscription counts as done. A row of another
  * provider than the configured one waits (retried) for an instance configured with it.
+ *
+ * <p>It also expires, at the provider, the checkout sessions queued in {@code billing_operations}
+ * ({@code expire_checkout}: a business deleted while a checkout was open or being created), with the same
+ * retries. The provider is always called outside any database transaction.
  */
 @Component
 @ConditionalOnProperty(name = "insight.billing.worker.enabled", havingValue = "true", matchIfMissing = true)
@@ -26,11 +30,14 @@ public class BillingCancellationWorker {
     private final NamedParameterJdbcTemplate jdbc;
     private final BillingProvider provider;
     private final BillingProperties.Worker settings;
+    private final BillingOperations operations;
 
-    BillingCancellationWorker(NamedParameterJdbcTemplate jdbc, BillingProvider provider, BillingProperties properties) {
+    BillingCancellationWorker(NamedParameterJdbcTemplate jdbc, BillingProvider provider, BillingProperties properties,
+            BillingOperations operations) {
         this.jdbc = jdbc;
         this.provider = provider;
         this.settings = properties.worker();
+        this.operations = operations;
     }
 
     record Claimed(long id, long businessId, String provider, String subscriptionId, int attempts) {
@@ -46,7 +53,7 @@ public class BillingCancellationWorker {
         }
     }
 
-    /** Handles every due cancellation; returns how many were handled (done or failed). */
+    /** Handles every due cancellation and checkout expiry; returns how many were handled (done or failed). */
     public int processDue() {
         int handled = 0;
         Claimed claimed;
@@ -54,7 +61,35 @@ public class BillingCancellationWorker {
             process(claimed);
             handled++;
         }
+        java.util.Optional<BillingOperations.Operation> expiry;
+        while ((expiry = operations.claimExpiry(settings.lease())).isPresent()) {
+            expire(expiry.get());
+            handled++;
+        }
         return handled;
+    }
+
+    private void expire(BillingOperations.Operation op) {
+        try {
+            if (!op.provider().equals(provider.name())) {
+                throw new IllegalStateException("Provider " + op.provider() + " is not configured on this instance");
+            }
+            provider.expireCheckout(op.checkoutId());
+            operations.expiryDone(op.id());
+            log.info("Expired checkout session of deleted business {} at {} (operation {}).", op.businessId(),
+                    op.provider(), op.id());
+        } catch (RuntimeException e) {
+            Duration wait = settings.retryDelay(op.attempts());
+            operations.expiryFailed(op.id(), BillingEventWorker.describe(e), wait);
+            if (op.attempts() >= settings.alertAfterAttempts()) {
+                log.error("Expiring a checkout session of deleted business {} has failed {} times in a row; retrying in {}: "
+                        + "{}. If it is paid meanwhile, its subscription is canceled automatically.", op.businessId(),
+                        op.attempts(), wait, BillingEventWorker.describe(e));
+            } else {
+                log.warn("Expiring a checkout session of deleted business {} failed (attempt {}); retrying in {}: {}",
+                        op.businessId(), op.attempts(), wait, BillingEventWorker.describe(e));
+            }
+        }
     }
 
     private Claimed claim() {
