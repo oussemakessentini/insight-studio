@@ -205,7 +205,7 @@ function BillingContent({ billing, timeZone, emailVerified }: { billing: Billing
             <PlanBadge label={onFree ? 'Free plan' : `${billing.plan.name} plan`} tone={onFree ? 'neutral' : 'good'} />
             {badge && <PlanBadge {...badge} />}
           </div>
-          <p className="billing-plan-price">{billing.plan.priceDisplay}</p>
+          {billing.plan.priceDisplay !== billing.plan.name && <p className="billing-plan-price">{billing.plan.priceDisplay}</p>}
           {period && <p className="billing-plan-period">{period}</p>}
 
           {billing.canManage ? (

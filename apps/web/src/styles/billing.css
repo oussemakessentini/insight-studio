@@ -299,6 +299,26 @@
 .billing-compare th[scope='row'] {
   font-weight: 550;
   text-align: left;
+  /* Long limit names wrap so the three columns fit a phone without sideways scrolling. */
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.billing-compare td {
+  white-space: nowrap;
+}
+
+@media (max-width: 520px) {
+  .billing-compare th,
+  .billing-compare td {
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+
+  .billing-compare th[scope='row'] {
+    min-width: 0;
+    width: 50%;
+  }
 }
 
 .billing-compare thead th {
