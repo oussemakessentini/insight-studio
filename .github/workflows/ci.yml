@@ -1,0 +1,157 @@
+# Continuous integration (docs/ci.md). Runs on every push and pull request; nothing is pushed or deployed.
+name: CI
+
+on:
+  push:
+    branches: [main, "integration/**", "feature/**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  JAVA_VERSION: "21"
+  NODE_VERSION: "24"
+
+jobs:
+  backend:
+    name: Backend tests (${{ matrix.shard }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [a, b]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: maven
+      - name: Tests (Testcontainers PostgreSQL)
+        run: bash scripts/ci/backend-tests.sh ${{ matrix.shard }}
+      - name: Test reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-${{ matrix.shard }}
+          path: apps/api/target/surefire-reports/
+          retention-days: 7
+
+  cube:
+    name: Cube checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Cube security unit tests
+        run: node --test services/analytics/test/
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: maven
+      - name: Cube integration tests (Cube, Cube Store, PostgreSQL containers)
+        run: bash scripts/ci/backend-tests.sh cube
+      - name: Record flaky Cube tests
+        if: always()
+        run: |
+          # Tests that failed once and passed on the rerun (docs/release-checks.md, intermittent Cube failures).
+          grep -l "flakyFailure\|flakyError" apps/api/target/surefire-reports/TEST-*.xml 2>/dev/null \
+            | xargs -r -n1 basename | sed 's/^/flaky: /' | tee -a "$GITHUB_STEP_SUMMARY" || true
+      - name: Test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-cube
+          path: apps/api/target/surefire-reports/
+          retention-days: 14
+
+  web:
+    name: Web checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm run lint
+      - run: npx tsc -b
+      - run: npm test
+      - run: npm run build
+
+  images:
+    name: Container images
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker/setup-buildx-action@v3
+      - name: Build (not pushed)
+        run: |
+          set -euo pipefail
+          docker buildx build --load -t "insight-api:${GITHUB_SHA}" apps/api
+          docker buildx build --load -t "insight-web:${GITHUB_SHA}" apps/web
+          docker buildx build --load -t "insight-cube:${GITHUB_SHA}" services/analytics
+      - name: Smoke test the API image starts and answers its probes
+        run: bash scripts/ci/image-smoke.sh "${GITHUB_SHA}"
+      - name: Scan images for known vulnerabilities (fixable HIGH/CRITICAL fail the build)
+        run: |
+          set -euo pipefail
+          for image in api web cube; do
+            docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:0.67.2 image \
+              --scanners vuln --ignore-unfixed --severity HIGH,CRITICAL --exit-code 1 --no-progress \
+              "insight-${image}:${GITHUB_SHA}"
+          done
+
+  config:
+    name: Configuration checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - name: Production compose file is valid
+        run: docker compose -f infra/compose.prod.yaml --env-file infra/.env.prod.example --profile analytics --profile monitoring config -q
+      - name: Development compose file is valid
+        run: docker compose -f infra/compose.yaml --env-file infra/.env.example --profile analytics config -q
+      - name: Alert rules are valid
+        run: docker run --rm --entrypoint promtool -v "$PWD/infra/monitoring:/m:ro" prom/prometheus:v3.15.0 check rules /m/alerts.yml
+      - name: Shell scripts
+        run: shellcheck scripts/**/*.sh infra/backup/*.sh
+
+  dependencies:
+    name: Dependency review
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: npm audit (web runtime dependencies)
+        working-directory: apps/web
+        run: npm audit --omit=dev --audit-level=high
+      - name: Known vulnerabilities in Maven and npm dependencies (OSV)
+        run: |
+          docker run --rm -v "$PWD:/src:ro" ghcr.io/google/osv-scanner:v2.2.3 scan source \
+            --lockfile /src/apps/web/package-lock.json -r /src/apps/api/pom.xml
+      - name: New dependencies in this pull request
+        if: github.event_name == 'pull_request'
+        uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high
