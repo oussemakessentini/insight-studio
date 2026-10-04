@@ -17,6 +17,7 @@ import { ProductPicker } from '../components/charts/ProductPicker'
 import { FormError, SelectField, SubmitButton, TextField } from '../components/Form'
 import { Link } from '../components/Link'
 import { PageHeader } from '../components/PageHeader'
+import { SeePlansLink } from '../components/SeePlans'
 import { ErrorState, Panel, Skeleton, SkeletonRows } from '../components/Panel'
 import { useApi } from '../hooks/useApi'
 import { useTouched } from '../hooks/useTouched'
@@ -40,6 +41,7 @@ import {
   type ChartFieldErrors,
   type FilterOption,
 } from '../lib/charts'
+import { planLimitOf } from '../lib/billing'
 import { formatDateTimeLong } from '../lib/format'
 import { navigate } from '../lib/router'
 import { errorMessage } from '../lib/validation'
@@ -305,10 +307,15 @@ function ChartBuilder({
           return
         }
       }
-      if (err instanceof ApiError && err.status === 409 && /title/i.test(err.message)) {
+      if (err instanceof ApiError && err.status === 409 && !planLimitOf(err) && /title/i.test(err.message)) {
         setServerErrors({ title: err.message })
       }
-      setFormError(errorMessage(err))
+      setFormError(
+        <>
+          {errorMessage(err)}
+          <SeePlansLink error={err} />
+        </>,
+      )
     }
   }
 

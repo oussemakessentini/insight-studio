@@ -247,7 +247,11 @@ export function ImportFlow({ kind, currency, timeZone, href, onFiltersChange, bu
               )}
 
               {runError && !busy && (
-                <ErrorState message={runError.message} onRetry={runError.retryable ? () => void send(true) : undefined} />
+                <ErrorState
+                  message={runError.message}
+                  error={runError.error}
+                  onRetry={runError.retryable ? () => void send(true) : undefined}
+                />
               )}
 
               {result && !busy && !imported && (
@@ -534,13 +538,15 @@ interface UploadError {
   message: string
   /** Network and server errors may pass on a second try; a refused file (400, 413) won't. */
   retryable: boolean
+  /** The caught error: a plan-limit refusal (monthly imports, stores) links to the plans. */
+  error?: unknown
 }
 
 function uploadError(err: unknown, bytes: number): UploadError {
   if (err instanceof ApiError) {
     if (err.status === 413) return { message: tooLargeMessage(bytes), retryable: false }
     // A 403 (role without imports, or the read-only demo) carries the server's explanation.
-    return { message: err.message, retryable: err.status === 0 || err.status >= 500 }
+    return { message: err.message, retryable: err.status === 0 || err.status >= 500, error: err }
   }
   return { message: err instanceof Error ? err.message : String(err), retryable: true }
 }

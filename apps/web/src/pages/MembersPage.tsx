@@ -130,7 +130,8 @@ function InviteMember({
   const [email, setEmail] = useState('')
   const [role, setRole] = useState<Role>('VIEWER')
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  // The caught error (not just its text), so a plan-limit refusal can link to the plans.
+  const [error, setError] = useState<unknown>(null)
   const touched = useTouched<'email'>()
   const fieldError = emailError(email)
 
@@ -146,7 +147,7 @@ function InviteMember({
       touched.reset()
       onInvited(invitation)
     } catch (err) {
-      setError(errorMessage(err))
+      setError(err)
     } finally {
       setBusy(false)
     }
@@ -160,7 +161,7 @@ function InviteMember({
       subtitle="We email them a link to join. They sign in or create an account with that address to accept."
     >
       <form className="form-stack" onSubmit={(e) => void onSubmit(e)} noValidate>
-        {error && <FormError>{error}</FormError>}
+        {error != null && <FormError error={error}>{errorMessage(error)}</FormError>}
         <div className="form-inline">
           <TextField
             label="Email"

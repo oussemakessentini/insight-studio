@@ -16,7 +16,8 @@ import '../styles/reports.css'
 import '../styles/charts.css'
 import type { PageProps } from './types'
 
-type Notice = { kind: 'success' | 'error'; message: string; href?: string } | null
+/** `error`: the caught error of an error notice, so a plan-limit refusal links to the plans. */
+type Notice = { kind: 'success' | 'error'; message: string; href?: string; error?: unknown } | null
 
 /** Every chart of the business; owners and admins also create, duplicate and delete them here. */
 export function ChartsPage({ context, href }: PageProps) {
@@ -67,7 +68,7 @@ export function ChartsPage({ context, href }: PageProps) {
                 )}
               </FormSuccess>
             )}
-            {notice?.kind === 'error' && <FormError>{notice.message}</FormError>}
+            {notice?.kind === 'error' && <FormError error={notice.error}>{notice.message}</FormError>}
           </div>
           <AsyncContent {...list} skeleton={<SkeletonRows rows={4} />}>
             {(charts) =>
@@ -87,7 +88,7 @@ export function ChartsPage({ context, href }: PageProps) {
                     setNotice({ kind: 'success', message: `Deleted “${chart.title}”.` })
                     setVersion((v) => v + 1)
                   }}
-                  onError={(message) => setNotice({ kind: 'error', message })}
+                  onError={(error) => setNotice({ kind: 'error', message: errorMessage(error), error })}
                 />
               )
             }
@@ -135,7 +136,7 @@ interface ChartTableProps {
   href: (path: string) => string
   onDuplicated: (copy: { id: number; title: string }) => void
   onDeleted: (chart: ChartSummary) => void
-  onError: (message: string) => void
+  onError: (error: unknown) => void
 }
 
 function ChartTable({ charts, canManage, timeZone, href, onDuplicated, onDeleted, onError }: ChartTableProps) {
@@ -147,7 +148,7 @@ function ChartTable({ charts, canManage, timeZone, href, onDuplicated, onDeleted
     try {
       await action()
     } catch (err) {
-      onError(errorMessage(err))
+      onError(err)
     } finally {
       setBusy(null)
     }
