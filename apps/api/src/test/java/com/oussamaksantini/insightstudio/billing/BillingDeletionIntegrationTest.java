@@ -66,10 +66,14 @@ class BillingDeletionIntegrationTest extends BillingIntegrationTest {
         assertThat(((Number) row.get("business_id")).longValue()).isEqualTo(shop.id());
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM business_subscriptions", Long.class)).isZero();
 
-        // The provider is down: retried with backoff, never given up.
+        // The deletion also queued the expiry of the business's checkout session (already paid here).
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM billing_operations WHERE kind = 'expire_checkout'", Long.class))
+                .isOne();
+
+        // The provider is down: both are retried with backoff, never given up.
         BillingCancellationWorker broken = new BillingCancellationWorker(named, new FailingProvider(provider), properties, operations);
         for (int attempt = 1; attempt <= 3; attempt++) {
-            assertThat(broken.processDue()).isEqualTo(1);
+            assertThat(broken.processDue()).isEqualTo(2);
             Map<String, Object> pending = jdbc.queryForMap("""
                     SELECT status, attempts, last_error, round(extract(epoch FROM next_attempt_at - now())) AS wait
                     FROM billing_cancellations""");
@@ -79,12 +83,16 @@ class BillingDeletionIntegrationTest extends BillingIntegrationTest {
             assertThat(((Number) pending.get("wait")).longValue()).isBetween(30L * (1L << (attempt - 1)) - 5, 30L * (1L << (attempt - 1)));
             assertThat(broken.processDue()).isZero();
             jdbc.update("UPDATE billing_cancellations SET next_attempt_at = now()");
+            jdbc.update("UPDATE billing_operations SET next_attempt_at = now() WHERE kind = 'expire_checkout'");
         }
         assertThat(fakeStatus(subscription)).isEqualTo("active");
 
         // A new worker with the provider back cancels it.
         BillingCancellationWorker restarted = new BillingCancellationWorker(named, provider, properties, operations);
-        assertThat(restarted.processDue()).isEqualTo(1);
+        assertThat(restarted.processDue()).isEqualTo(2);
+        // Expiring a session that was already paid is done (nothing to expire).
+        assertThat(jdbc.queryForObject("SELECT status FROM billing_operations WHERE kind = 'expire_checkout'", String.class))
+                .isEqualTo("SUCCEEDED");
         assertThat(jdbc.queryForObject("SELECT status FROM billing_cancellations", String.class)).isEqualTo("DONE");
         assertThat(fakeStatus(subscription)).isEqualTo("canceled");
 
@@ -134,7 +142,8 @@ class BillingDeletionIntegrationTest extends BillingIntegrationTest {
         assertThat(((Number) row.get("business_id")).longValue()).isEqualTo(shop.id());
         assertThat(row.get("provider_subscription_id")).isEqualTo(subscription);
 
-        assertThat(cancellationWorker.processDue()).isEqualTo(1);
+        // The cancellation, and the expiry the deletion queued for the session (paid meanwhile: nothing to expire).
+        assertThat(cancellationWorker.processDue()).isEqualTo(2);
         assertThat(jdbc.queryForObject("SELECT status FROM billing_cancellations", String.class)).isEqualTo("DONE");
         assertThat(fakeStatus(subscription)).isEqualTo("canceled");
         // The provider's "deleted" event is ignored and queues nothing more.
@@ -164,7 +173,7 @@ class BillingDeletionIntegrationTest extends BillingIntegrationTest {
         assertThat(jdbc.queryForList("SELECT provider_subscription_id FROM billing_cancellations", String.class))
                 .containsExactly(subscription);
 
-        assertThat(cancellationWorker.processDue()).isEqualTo(1);
+        assertThat(cancellationWorker.processDue()).isEqualTo(2);   // the cancellation and the session's expiry
         assertThat(fakeStatus(subscription)).isEqualTo("canceled");
         // Replaying the old events once more changes nothing: the subscription is canceled now.
         for (FakeBillingProvider.Delivery delivery : emitted) {
