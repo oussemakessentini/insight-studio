@@ -215,9 +215,10 @@ class DeletionIntegrationTest extends PostgresIntegrationTest {
         // The owner's account is untouched.
         assertThat(jdbc.queryForObject("SELECT deleted_at IS NULL FROM users WHERE id = ?", Boolean.class, owner.id())).isTrue();
 
-        // No Cube in this application: the purge is skipped.
-        assertThat(purges.processDue()).isEqualTo(1);
-        assertThat(jdbc.queryForObject("SELECT status FROM cube_purge_requests", String.class)).isEqualTo("SKIPPED");
+        // No Cube in this application: the purge is left for an instance that has one.
+        assertThat(purges.processDue()).isZero();
+        assertThat(jdbc.queryForObject("SELECT status || '/' || attempts FROM cube_purge_requests", String.class))
+                .isEqualTo("PENDING/0");
     }
 
     @Test

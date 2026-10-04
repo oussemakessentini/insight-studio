@@ -17,8 +17,9 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  * @param sweepDelay when, after the deletion, the worker forces one more rebuild so that Cube drops the
  *     superseded rollup tables still holding the deleted rows; must exceed both Cube's
  *     {@code CUBEJS_TOUCH_PRE_AGG_TIMEOUT} and {@code CUBEJS_DB_QUERY_TIMEOUT}
- * @param retryDelay wait after a failed attempt
- * @param maxAttempts attempts per phase before the purge is marked FAILED
+ * @param retryDelay wait after the first failed attempt; it doubles after each further failure
+ * @param maxRetryDelay the longest wait between attempts (a purge is retried until it succeeds)
+ * @param alertAfterAttempts failed attempts in a row after which each failure is logged as an error
  */
 @ConfigurationProperties("insight.cube-purge")
 public record CubePurgeProperties(
@@ -29,12 +30,13 @@ public record CubePurgeProperties(
         @DefaultValue("PT2M") Duration zoneTimeout,
         @DefaultValue("PT70M") Duration sweepDelay,
         @DefaultValue("PT5M") Duration retryDelay,
-        @DefaultValue("6") int maxAttempts) {
+        @DefaultValue("PT1H") Duration maxRetryDelay,
+        @DefaultValue("6") int alertAfterAttempts) {
 
     public CubePurgeProperties {
         timeZones = timeZones == null ? List.of()
                 : timeZones.stream().map(String::strip).filter(zone -> !zone.isEmpty()).toList();
-        if (maxAttempts < 1 || zoneTimeout.isNegative() || zoneTimeout.isZero() || sweepDelay.isNegative()) {
+        if (alertAfterAttempts < 1 || retryDelay.isNegative() || maxRetryDelay.compareTo(retryDelay) < 0 || zoneTimeout.isNegative() || zoneTimeout.isZero() || sweepDelay.isNegative()) {
             throw new IllegalStateException("Invalid insight.cube-purge settings");
         }
     }

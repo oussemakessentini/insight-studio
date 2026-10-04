@@ -38,9 +38,12 @@ import org.springframework.stereotype.Component;
  *       the worker bumps {@code report_data_version} and rebuilds everything again; those builds drop
  *       every table older than the current ones. Then the request is DONE.</li>
  * </ol>
- * Without a Cube connection the request is SKIPPED (nothing was ever stored in Cube by this API).
- * A phase that fails is retried after {@code retry-delay}, at most {@code max-attempts} times, then
- * the request is FAILED with the error (logged, never shown to users).
+ * <p>Cleanup is <b>eventual</b>: everything a purge needs is in its row, so it survives restarts and
+ * Cube outages. A phase that fails is retried, forever, after {@code retry-delay} doubling up to
+ * {@code max-retry-delay}; from {@code alert-after-attempts} failures in a row each one is logged as an
+ * error. A worker that crashes mid-purge loses its lease and another (or the restarted) instance takes
+ * the purge over. An instance without a Cube connection never claims purges: they wait, PENDING, for
+ * an instance that has one.
  */
 @Component
 @EnableConfigurationProperties(CubePurgeProperties.class)
@@ -87,6 +90,9 @@ public class CubePurgeWorker {
 
     /** Handles every due request; returns how many were handled. */
     public int processDue() {
+        if (cube.getIfAvailable() == null) {
+            return 0;   // left PENDING for an instance with Cube
+        }
         int handled = 0;
         Claimed claimed;
         while ((claimed = claim()) != null) {
@@ -123,8 +129,7 @@ public class CubePurgeWorker {
     private void process(Claimed request) {
         CubeClient client = cube.getIfAvailable();
         if (client == null) {
-            finish(request.id(), "SKIPPED", null);
-            log.info("Cube purge {} (business {}) skipped: no Cube is configured.", request.id(), request.businessId());
+            failed(request, "No Cube connection on this instance");
             return;
         }
         try {
@@ -213,21 +218,31 @@ public class CubePurgeWorker {
         return zones;
     }
 
-    private void failed(Claimed request, String error) {
-        if (request.attempts() >= settings.maxAttempts()) {
-            finish(request.id(), "FAILED", error);
-            log.error("Cube purge {} (business {}) failed after {} attempts: {}. Rebuild Cube's rollups by hand "
-                    + "(docs/account-management-api.md).", request.id(), request.businessId(), request.attempts(), error);
-            return;
+    /** The wait before the next attempt after {@code attempts} failures in a row. */
+    Duration retryDelay(int attempts) {
+        Duration delay = settings.retryDelay();
+        for (int i = 1; i < attempts && delay.compareTo(settings.maxRetryDelay()) < 0; i++) {
+            delay = delay.multipliedBy(2);
         }
+        return delay.compareTo(settings.maxRetryDelay()) > 0 ? settings.maxRetryDelay() : delay;
+    }
+
+    private void failed(Claimed request, String error) {
+        Duration wait = retryDelay(request.attempts());
         jdbc.update("""
                 UPDATE cube_purge_requests
                 SET locked_until = NULL, last_error = :error, next_attempt_at = now() + make_interval(secs => :wait)
                 WHERE id = :id
                 """, new MapSqlParameterSource().addValue("id", request.id()).addValue("error", error)
-                        .addValue("wait", settings.retryDelay().toSeconds()));
-        log.warn("Cube purge {} (business {}) attempt {} of {} failed; retrying in {}: {}", request.id(),
-                request.businessId(), request.attempts(), settings.maxAttempts(), settings.retryDelay(), error);
+                        .addValue("wait", wait.toSeconds()));
+        if (request.attempts() >= settings.alertAfterAttempts()) {
+            log.error("Cube purge {} (business {}) has failed {} times in a row; retrying in {}: {}. Superseded Cube "
+                    + "rollups may still hold the deleted business's rows (docs/data-retention.md).", request.id(),
+                    request.businessId(), request.attempts(), wait, error);
+        } else {
+            log.warn("Cube purge {} (business {}) attempt {} failed; retrying in {}: {}", request.id(),
+                    request.businessId(), request.attempts(), wait, error);
+        }
     }
 
     private void finish(long id, String status, String error) {
