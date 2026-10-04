@@ -445,12 +445,14 @@ running. They do not touch your local database. The tests cover:
   dashboards and charts out of reach (also refused by the database), conflicting saves answering
   409 without overwriting, deleted charts reported as missing, and the chart run limit
 - business settings and account management: the permission matrix of every new endpoint; currency
-  refused once there are amounts; a sale near midnight changing day and month with the time zone
+  refused once there are amounts, also while a product, sale or import is being written at the same
+  moment (both orders, held open in separate transactions, and racing requests); a sale near midnight changing day and month with the time zone
   while totals stay equal; every audit action, paging and isolation, with stored details scanned for
   secrets; export contents equal to the database and free of other businesses' data; business and
   account deletion end to end (every table, pending mail, sessions on the next request, tombstones,
-  last-owner protection, reauthentication and its rate limit); retention purges; and, with Cube, no
-  Cube Store table holding a deleted business's rows after the purge
+  last-owner protection, reauthentication and its rate limit); retention purges; Cube purges retried
+  until they succeed across failures, restarts and crashed workers; and, with Cube, no Cube Store
+  table holding a deleted business's rows after the purge
 - saved reports: every endpoint against OWNER, ADMIN, VIEWER, unverified and signed-out callers;
   another business's definitions and stores answer 404 everywhere, including exports; every
   relative preset at month, quarter, year and leap-year boundaries and in time zones a day apart
