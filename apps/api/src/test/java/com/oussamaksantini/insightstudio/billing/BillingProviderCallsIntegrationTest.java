@@ -76,7 +76,10 @@ class BillingProviderCallsIntegrationTest extends PostgresIntegrationTest {
         properties.put("insight.billing.stripe.secret-key", "sk_test_stub");
         properties.put("insight.billing.stripe.webhook-secret", "whsec_stub");
         properties.put("insight.billing.stripe.api-base", "http://127.0.0.1:" + stripe.port());
-        properties.put("insight.billing.stripe.read-timeout", "PT1S");
+        // Longer than anything a test does while a call is held (a business deletion on a busy machine took
+        // several seconds); the timeout tests make the stub slower than this. Spring's read timeout covers
+        // the whole response, body included, so a stalled provider never hangs a request.
+        properties.put("insight.billing.stripe.read-timeout", "PT10S");
         properties.put("insight.billing.plans.pro.provider-price-id", PRICE);
         // The test runs the workers itself.
         properties.put("insight.billing.worker.poll-interval", "PT1H");
@@ -172,11 +175,11 @@ class BillingProviderCallsIntegrationTest extends PostgresIntegrationTest {
     @Test
     void aTimedOutCallIsRetriedWithTheSameKeyAndCreatesNothingTwice() throws Exception {
         // The first checkout request reaches Stripe, which creates the session, but answers after the
-        // API's 1 s read timeout: the outcome is unknown to the API.
+        // API's 10 s read timeout: the outcome is unknown to the API.
         AtomicInteger calls = new AtomicInteger();
         stripe.when("POST /v1/checkout/sessions", stub -> {
             if (calls.incrementAndGet() == 1) {
-                sleep(2500);
+                sleep(12_000);
             }
             return null;
         });
@@ -188,7 +191,7 @@ class BillingProviderCallsIntegrationTest extends PostgresIntegrationTest {
         assertThat((String) op.get("last_error")).contains("unreachable");
         assertThat(openTransactions()).isZero();
 
-        Thread.sleep(3000);   // the stub has finished the first request by now
+        Thread.sleep(5000);   // the stub has finished the first request by now (12 s after it began)
         HttpResponse<String> second = checkout(client);
         assertThat(second.statusCode()).as(second.body()).isEqualTo(200);
         List<String> keys = stripe.keys("POST /v1/checkout/sessions");
@@ -209,7 +212,7 @@ class BillingProviderCallsIntegrationTest extends PostgresIntegrationTest {
         AtomicInteger calls = new AtomicInteger();
         stripe.when("POST /v1/customers", stub -> {
             if (calls.incrementAndGet() == 1) {
-                sleep(2500);
+                sleep(12_000);
             }
             return null;
         });
@@ -217,7 +220,7 @@ class BillingProviderCallsIntegrationTest extends PostgresIntegrationTest {
         assertThat(checkout(client).statusCode()).isEqualTo(503);
         assertThat(jdbc.queryForObject("SELECT provider_customer_id FROM business_subscriptions WHERE business_id = ?",
                 String.class, shop)).isNull();
-        Thread.sleep(3000);
+        Thread.sleep(5000);
         assertThat(checkout(client).statusCode()).isEqualTo(200);
         List<String> keys = stripe.keys("POST /v1/customers");
         assertThat(keys).hasSize(2);
