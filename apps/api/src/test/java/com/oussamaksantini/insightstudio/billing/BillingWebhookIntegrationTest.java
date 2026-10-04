@@ -342,6 +342,9 @@ class BillingWebhookIntegrationTest extends BillingIntegrationTest {
         eventWorker.processDue();
         assertThat(events()).extracting(e -> e.get("status")).containsOnly("IGNORED");
         assertThat(count("SELECT COUNT(*) FROM business_subscriptions")).isZero();
+        // The live subscription of the business that does not exist is not left charging.
+        assertThat(jdbc.queryForList("SELECT provider_subscription_id FROM billing_cancellations", String.class))
+                .containsExactly("sub_fake_ghost");
     }
 
     // ---------------------------------------------------------------- retention

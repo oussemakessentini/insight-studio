@@ -34,7 +34,8 @@ import org.springframework.transaction.support.TransactionTemplate;
  * <p>The business comes from the subscription's {@code metadata.business_id}; it must agree with the
  * event's own reference and with the business already linked to that customer or subscription (if any),
  * otherwise the event is {@code IGNORED} (and logged). Events of unknown or deleted businesses, of
- * unhandled types and of subscriptions superseded by a newer one are {@code IGNORED} too.
+ * unhandled types and of subscriptions superseded by a newer one are {@code IGNORED} too; a live
+ * subscription of a business that does not exist is also queued for cancellation, never left charging.
  *
  * <p>Failures (provider down, ...) are retried after {@code retry-delay} (30 s) doubling up to
  * {@code max-retry-delay} (1 h), without limit; from the {@code alert-after-attempts}th (6th) failure in
@@ -182,10 +183,11 @@ public class BillingEventWorker {
             return Result.ignored("Business mismatch between event and subscription");
         }
         if (!queries.lockBusiness(businessId)) {
-            cancelOrphan(state);
-            log.info("Billing event {} ({}) is for business {}, which does not exist (deleted?): ignored.",
-                    event.eventId(), event.type(), businessId);
-            return Result.ignored("Unknown or deleted business");
+            boolean queued = cancelOrphan(businessId, state);
+            log.info("Billing event {} ({}) is for business {}, which does not exist (deleted?): ignored{}.",
+                    event.eventId(), event.type(), businessId, queued ? "; its live subscription is queued for cancellation" : "");
+            return Result.ignored(queued ? "Unknown or deleted business; live subscription queued for cancellation"
+                    : "Unknown or deleted business");
         }
         if (state.customerId() != null) {
             Optional<Long> linked = queries.businessOfCustomer(name, state.customerId());
@@ -244,25 +246,21 @@ public class BillingEventWorker {
     }
 
     /**
-     * A live subscription whose business is gone but whose customer belonged to a business deleted here
-     * (a cancellation is recorded for that customer): it is queued for cancellation too, so a checkout
-     * finished around the deletion is not left charging.
+     * A live subscription whose {@code metadata.business_id} names a business that does not exist (e.g. a
+     * checkout paid after its business was deleted) is never left charging: it is queued in
+     * {@code billing_cancellations} for {@link BillingCancellationWorker}. Only this app creates
+     * subscriptions with that metadata, and the event's signature was verified. Returns whether one was queued.
      */
-    private void cancelOrphan(SubscriptionState state) {
-        if (state.customerId() == null || BillingPlans.ENDED.contains(state.status())) {
-            return;
+    private boolean cancelOrphan(long businessId, SubscriptionState state) {
+        if (state.id() == null || state.status() == null || BillingPlans.ENDED.contains(state.status())) {
+            return false;
         }
-        int queued = jdbc.update("""
+        return jdbc.update("""
                 INSERT INTO billing_cancellations (business_id, provider, provider_subscription_id, provider_customer_id)
-                SELECT c.business_id, c.provider, :s, c.provider_customer_id
-                FROM billing_cancellations c
-                WHERE c.provider = :p AND c.provider_customer_id = :c
-                LIMIT 1
+                VALUES (:b, :p, :s, :c)
                 ON CONFLICT (provider, provider_subscription_id) DO NOTHING
-                """, Map.of("p", provider.name(), "c", state.customerId(), "s", state.id()));
-        if (queued > 0) {
-            log.info("Queued the cancellation of a subscription of a deleted business's customer.");
-        }
+                """, new MapSqlParameterSource().addValue("b", businessId).addValue("p", provider.name())
+                        .addValue("s", state.id()).addValue("c", state.customerId())) == 1;
     }
 
     private void finish(Claimed event, Result result) {

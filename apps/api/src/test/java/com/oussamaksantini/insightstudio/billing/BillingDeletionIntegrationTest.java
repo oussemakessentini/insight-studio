@@ -110,4 +110,68 @@ class BillingDeletionIntegrationTest extends BillingIntegrationTest {
         deleteBusiness();
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM billing_cancellations", Long.class)).isZero();
     }
+
+    /** The fake subscription created by a checkout session, as the provider sees it. */
+    private String subscriptionOf(String session) {
+        return jdbc.queryForObject("SELECT data ->> 'subscription' FROM fake_billing_objects WHERE id = ?", String.class, session);
+    }
+
+    @Test
+    void aCheckoutPaidAfterItsBusinessWasDeletedIsCanceledAtTheProvider() throws Exception {
+        String session = checkout(shop);
+        deleteBusiness();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM billing_cancellations", Long.class)).isZero();
+
+        // The owner had the checkout page open and pays anyway (the fake's page API needs the business,
+        // so the payment is made on the fake directly, as Stripe's page would).
+        fake().act(session, "pay");
+        String subscription = subscriptionOf(session);
+        assertThat(fakeStatus(subscription)).isEqualTo("active");
+
+        eventWorker.processDue();
+        assertThat(events()).extracting(e -> e.get("status")).containsOnly("IGNORED");
+        Map<String, Object> row = jdbc.queryForMap("SELECT business_id, provider_subscription_id, status FROM billing_cancellations");
+        assertThat(((Number) row.get("business_id")).longValue()).isEqualTo(shop.id());
+        assertThat(row.get("provider_subscription_id")).isEqualTo(subscription);
+
+        assertThat(cancellationWorker.processDue()).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT status FROM billing_cancellations", String.class)).isEqualTo("DONE");
+        assertThat(fakeStatus(subscription)).isEqualTo("canceled");
+        // The provider's "deleted" event is ignored and queues nothing more.
+        eventWorker.processDue();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM billing_cancellations", Long.class)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM business_subscriptions", Long.class)).isZero();
+    }
+
+    @Test
+    void aLateCheckoutIsCanceledEvenWithEventsDeliveredTwiceAndOutOfOrder() throws Exception {
+        String session = checkout(shop);
+        deleteBusiness();
+        int before = fake().deliveries().size();
+        fake().act(session, "pay");
+        String subscription = subscriptionOf(session);
+        var emitted = new java.util.ArrayList<>(fake().deliveries().subList(before, fake().deliveries().size()));
+        // Start over: deliver them ourselves, reversed, each twice.
+        jdbc.update("DELETE FROM billing_events");
+        java.util.Collections.reverse(emitted);
+        for (FakeBillingProvider.Delivery delivery : emitted) {
+            assertThat(replay(delivery)).isEqualTo(200);
+            assertThat(replay(delivery)).isEqualTo(200);
+        }
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM billing_events", Long.class)).isEqualTo(emitted.size());
+        eventWorker.processDue();
+        assertThat(events()).extracting(e -> e.get("status")).containsOnly("IGNORED");
+        assertThat(jdbc.queryForList("SELECT provider_subscription_id FROM billing_cancellations", String.class))
+                .containsExactly(subscription);
+
+        assertThat(cancellationWorker.processDue()).isEqualTo(1);
+        assertThat(fakeStatus(subscription)).isEqualTo("canceled");
+        // Replaying the old events once more changes nothing: the subscription is canceled now.
+        for (FakeBillingProvider.Delivery delivery : emitted) {
+            replay(delivery);
+        }
+        eventWorker.processDue();
+        assertThat(cancellationWorker.processDue()).isZero();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM billing_cancellations", Long.class)).isEqualTo(1);
+    }
 }

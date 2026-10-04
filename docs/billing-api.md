@@ -183,9 +183,12 @@ ends. Everything needed is in the row, so work survives restarts.
   immediately (no proration), retrying with the same backoff until done; an already canceled or unknown
   subscription counts as done. Webhooks that arrive later for the deleted business are `IGNORED`.
   `business_subscriptions` is removed with the business (cascade).
-- If a live subscription shows up later for a deleted business whose customer already has a
-  cancellation recorded (e.g. a checkout finished around the deletion), the event worker queues its
-  cancellation too.
+- A live subscription (not `canceled`/`incomplete_expired`) whose `metadata.business_id` names a
+  business that does not exist (e.g. a checkout paid after its business was deleted) is never left
+  charging: the event worker queues it in `billing_cancellations` (`ON CONFLICT DO NOTHING`) and marks
+  the event `IGNORED`; the cancellation worker then cancels it. Only this app creates subscriptions with
+  that metadata, and events are signature-verified. A live subscription never attaches to another
+  business than its metadata's.
 
 ## Retention
 
