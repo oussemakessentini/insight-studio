@@ -1,0 +1,167 @@
+# Production stack (docs/deployment.md). Nothing here provisions cloud resources: it runs on one Docker host
+# you control, behind a TLS-terminating reverse proxy or load balancer that forwards to WEB_PUBLISH.
+#
+#   cp infra/.env.prod.example infra/.env.prod      # fill in real values; never commit it
+#   docker compose -f infra/compose.prod.yaml --env-file infra/.env.prod up -d
+#   docker compose -f infra/compose.prod.yaml --env-file infra/.env.prod --profile analytics up -d    # + Cube
+#   docker compose -f infra/compose.prod.yaml --env-file infra/.env.prod --profile monitoring up -d  # + Prometheus
+#
+# Images are built by CI (or locally, docs/deployment.md) and referenced by tag: API_IMAGE, WEB_IMAGE, CUBE_IMAGE.
+# Only the web container is published; PostgreSQL, the API, its management port and Cube are internal.
+
+name: insight-studio
+
+x-hardening: &hardening
+  restart: unless-stopped
+  security_opt:
+    - no-new-privileges:true
+  logging:
+    driver: json-file
+    options:
+      max-size: "20m"
+      max-file: "5"
+
+services:
+  db:
+    <<: *hardening
+    image: postgres:16@sha256:1a6ab3f5345eb6dbe04a1349529caabdb0ab09293a09590fad07b2246bfa4b54
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    shm_size: 256mb
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [backend]
+
+  api:
+    <<: *hardening
+    image: ${API_IMAGE:-insight-api:latest}
+    build: ../apps/api
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      # "prod"; "prod,demo" also seeds the read-only public demo business (docs/deployment.md).
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES:-prod}
+      DB_URL: jdbc:postgresql://db:5432/${POSTGRES_DB}
+      DB_USERNAME: ${POSTGRES_USER}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      WEB_BASE_URL: ${WEB_BASE_URL:?set WEB_BASE_URL (https://...)}
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-172.30.240.10}
+      MAIL_HOST: ${MAIL_HOST:?set MAIL_HOST}
+      MAIL_PORT: ${MAIL_PORT:-587}
+      MAIL_USERNAME: ${MAIL_USERNAME:-}
+      MAIL_PASSWORD: ${MAIL_PASSWORD:-}
+      MAIL_FROM: ${MAIL_FROM:?set MAIL_FROM}
+      MAIL_SMTP_AUTH: ${MAIL_SMTP_AUTH:-true}
+      MAIL_STARTTLS: ${MAIL_STARTTLS:-true}
+      # SQL stays the report engine unless REPORTS_ENGINE=cube is set deliberately (docs/release-checks.md).
+      REPORTS_ENGINE: ${REPORTS_ENGINE:-sql}
+      INSIGHT_CUBE_URL: ${INSIGHT_CUBE_URL:-}
+      CUBEJS_API_SECRET: ${CUBEJS_API_SECRET:-}
+      CUBEJS_SCHEDULED_REFRESH_TIMEZONES: ${CUBEJS_SCHEDULED_REFRESH_TIMEZONES:-America/New_York}
+      BILLING_PROVIDER: ${BILLING_PROVIDER:-none}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      BILLING_PRO_PRICE_ID: ${BILLING_PRO_PRICE_ID:-}
+      MANAGEMENT_PORT: "8081"
+      LOG_FORMAT: ${LOG_FORMAT:-ecs}
+      JAVA_TOOL_OPTIONS: ${API_JAVA_OPTIONS:--XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError}
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    deploy:
+      resources:
+        limits:
+          memory: ${API_MEMORY:-1536m}
+          cpus: "${API_CPUS:-2}"
+    networks: [backend]
+
+  web:
+    <<: *hardening
+    image: ${WEB_IMAGE:-insight-web:latest}
+    build: ../apps/web
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      API_UPSTREAM: http://api:8080
+    ports:
+      # Bind to the address your TLS proxy reaches (loopback when it runs on the same host).
+      - "${WEB_PUBLISH:-127.0.0.1:8090}:8080"
+    cap_drop: [ALL]
+    networks:
+      backend:
+        ipv4_address: 172.30.240.10
+
+  cube:
+    <<: *hardening
+    profiles: [analytics]
+    image: ${CUBE_IMAGE:-insight-cube:latest}
+    build: ../services/analytics
+    depends_on:
+      db:
+        condition: service_healthy
+      cubestore:
+        condition: service_started
+    environment:
+      CUBEJS_DB_TYPE: postgres
+      CUBEJS_DB_HOST: db
+      CUBEJS_DB_PORT: "5432"
+      CUBEJS_DB_NAME: ${POSTGRES_DB}
+      CUBEJS_DB_USER: ${POSTGRES_USER}
+      CUBEJS_DB_PASS: ${POSTGRES_PASSWORD}
+      # Required with this profile (32+ characters): Cube refuses to start without it. Not ":?" here, because
+      # compose checks every service, and the stack must start without Cube too.
+      CUBEJS_API_SECRET: ${CUBEJS_API_SECRET:-}
+      CUBEJS_REFRESH_WORKER: "true"
+      CUBEJS_CUBESTORE_HOST: cubestore
+      CUBEJS_SCHEDULED_REFRESH_TIMEZONES: ${CUBEJS_SCHEDULED_REFRESH_TIMEZONES:-America/New_York}
+      CUBEJS_TOUCH_PRE_AGG_TIMEOUT: "3600"
+      CUBEJS_DROP_PRE_AGG_WITHOUT_TOUCH: "true"
+    networks: [backend]
+
+  cubestore:
+    <<: *hardening
+    profiles: [analytics]
+    image: cubejs/cubestore:v1.7.46@sha256:ecf29d8e04282359526eab9292cb4324ec90f38770c0c46431b835c3835a8f6d
+    environment:
+      CUBESTORE_REMOTE_DIR: /cube/data
+      CUBESTORE_TELEMETRY: "false"
+    volumes:
+      - cubestore:/cube/data
+    networks: [backend]
+
+  prometheus:
+    <<: *hardening
+    profiles: [monitoring]
+    image: prom/prometheus:v3.15.0@sha256:efd719c99d83b060d9daefdcf00360461adf279f45ef5391f8d111892118753e
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=15d
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus:/prometheus
+    ports:
+      - "127.0.0.1:${PROMETHEUS_PUBLISH_PORT:-9091}:9090"
+    networks: [backend]
+
+networks:
+  backend:
+    ipam:
+      config:
+        # Fixed so TRUSTED_PROXIES can name the web proxy's address (172.30.240.10).
+        - subnet: 172.30.240.0/24
+
+volumes:
+  pgdata:
+  cubestore:
+  prometheus:

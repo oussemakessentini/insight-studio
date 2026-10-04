@@ -1,0 +1,79 @@
+# Alert rules for the Insight Studio API (docs/operations.md, "Alerts"). Checked in CI with promtool.
+groups:
+  - name: insight-api
+    rules:
+      - alert: InsightApiDown
+        expr: up{job="insight-api"} == 0
+        for: 2m
+        labels: {severity: critical}
+        annotations:
+          summary: "API instance {{ $labels.instance }} is not answering metrics scrapes"
+          runbook: "docs/operations.md#api-down"
+
+      - alert: InsightApiHighErrorRate
+        expr: |
+          sum(rate(http_server_requests_seconds_count{job="insight-api", status=~"5.."}[5m]))
+            / clamp_min(sum(rate(http_server_requests_seconds_count{job="insight-api"}[5m])), 0.001) > 0.05
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: "More than 5% of API requests fail with a 5xx"
+          runbook: "docs/operations.md#errors"
+
+      - alert: InsightApiSlowRequests
+        expr: |
+          histogram_quantile(0.95, sum by (le) (rate(http_server_requests_seconds_bucket{job="insight-api", uri!~"/api/billing/webhooks.*"}[10m]))) > 2
+        for: 15m
+        labels: {severity: warning}
+        annotations:
+          summary: "95th percentile API latency above 2 s"
+          runbook: "docs/operations.md#slow"
+
+      - alert: InsightDatabasePoolExhausted
+        expr: max(hikaricp_connections_pending{job="insight-api"}) > 0
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: "Requests are waiting for a database connection"
+          runbook: "docs/operations.md#slow"
+
+      # Background jobs: the queues live in PostgreSQL, every instance reports the same values (max is enough).
+      - alert: InsightJobQueueDelayed
+        expr: max by (queue) (insight_jobs_overdue_seconds{job="insight-api"}) > 900
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: "{{ $labels.queue }}: an item has waited more than 15 minutes past its due time"
+          runbook: "docs/operations.md#background-jobs"
+
+      - alert: InsightJobFailing
+        expr: max by (queue) (insight_jobs_max_attempts{job="insight-api"}) >= 6
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: "{{ $labels.queue }}: an item has failed 6 times or more (it keeps being retried)"
+          runbook: "docs/operations.md#background-jobs"
+
+      - alert: InsightBillingCancellationStuck
+        expr: max(insight_jobs_overdue_seconds{job="insight-api", queue="billing_cancellations"}) > 3600
+        for: 5m
+        labels: {severity: critical}
+        annotations:
+          summary: "A deleted business's subscription has not been canceled for over an hour: it may still be charged"
+          runbook: "docs/operations.md#background-jobs"
+
+      - alert: InsightWorkerStalled
+        expr: time() - max by (worker) (insight_job_last_success_seconds{job="insight-api", worker!="retention"}) > 600
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: "No instance has completed a {{ $labels.worker }} round for over 10 minutes"
+          runbook: "docs/operations.md#background-jobs"
+
+      - alert: InsightRetentionNotRun
+        expr: time() - max(insight_job_last_success_seconds{job="insight-api", worker="retention"}) > 93600
+        for: 30m
+        labels: {severity: warning}
+        annotations:
+          summary: "The daily retention purge has not completed for over 26 hours"
+          runbook: "docs/operations.md#background-jobs"
