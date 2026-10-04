@@ -18,6 +18,7 @@ periods below are the defaults; the settings that change them are listed at the 
 | Subscription state (`business_subscriptions`: plan, status, period end, provider customer and subscription ids) | while the business exists | deleted with the business |
 | Billing webhook events (event id, type and object ids only; never the payload) | 30 days after processing | deleted by the daily purge |
 | Subscription cancellations queued by business deletions (provider ids only) | until done, then 30 days | deleted by the daily purge |
+| Provider call records (`billing_operations`: idempotency key, customer and checkout session ids) | until finished, then 30 days (calls pending over a day are abandoned first) | deleted by the daily purge |
 | Cube rollups (Cube Store) | rebuilt after every data change | superseded tables dropped by Cube at its next build once untouched for 1 hour |
 
 Logs name ids (account, business, outbox, import), never passwords, tokens, links or email bodies.

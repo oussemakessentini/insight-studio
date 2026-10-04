@@ -138,8 +138,38 @@ profile, whose default is `none`), `stripe` or `none`.
   logged with Stripe's error type/code only, never the key or customer data.
 - **none**: billing off. Every business is Free, billing endpoints `404`, limits still enforced.
 
-One customer per business, created at the first checkout (under a lock on the business's billing
-row) and reused.
+One customer per business, created at the first checkout and reused.
+
+## Provider calls
+
+**No database transaction is open while the provider is called** (no row lock or pooled connection is
+held for as long as Stripe takes). Calls that create something are durable operations in
+`billing_operations` (Flyway V19), each with its own idempotency key:
+
+| Kind | Run by | Steps |
+|---|---|---|
+| `create_customer` | the owner's checkout request | short transaction (lock the billing row, check the plan, record the operation) → `POST /v1/customers` → short transaction (business still there? link the customer, or keep the one a concurrent request linked first) |
+| `create_checkout` | the owner's checkout request | short transaction (record) → `POST /v1/checkout/sessions` → short transaction: completed, or, if the business was deleted meanwhile, abandoned and its session queued for expiry (the request answers `404`) |
+| `expire_checkout` | `BillingCancellationWorker` | queued by a business deletion for every session of the business that may still be open (and by the case above); `POST /v1/checkout/sessions/{id}/expire`; an already expired, complete or unknown session counts as done; retried with the workers' backoff until done |
+
+Retries follow Stripe's idempotency rules (keys are kept at least 24 hours; the first result of a key
+is replayed, errors included):
+
+- a **timeout or connection error** leaves the operation `PENDING`: the owner's next click reuses its
+  key, so Stripe returns the customer or session the first attempt may already have created, never a
+  second one;
+- a **409 `idempotency_error`** (the same key still in flight, e.g. two simultaneous clicks) or a **429**
+  is not recorded by Stripe: same key next time;
+- **any other error answer** spends the key (`FAILED`): the next attempt uses a new one;
+- pending operations older than 23 hours are never reused (abandoned, then purged).
+
+A business deletion abandons the business's pending calls and queues expiries for its sessions in the
+deletion's own transaction; a request still running when the business disappears expires what it
+created itself. If a session is paid anyway (e.g. the expiry is still being retried), the orphan rule
+below cancels the resulting subscription.
+
+The portal session is not recorded: creating one changes nothing at the provider (a lost one is simply
+requested again). The event worker fetches subscriptions outside transactions too (see below).
 
 ## Webhook pipeline
 
@@ -152,9 +182,12 @@ row) and reused.
    no-ops. `200` at once.
 3. `BillingEventWorker` (every instance; lease + `FOR UPDATE SKIP LOCKED`) takes due events. Unhandled
    types are `IGNORED`. Otherwise it resolves the subscription (from the event, or the checkout session's
-   subscription fetched from the provider), takes an advisory lock for that subscription, **fetches its
-   current state from the provider** and writes `business_subscriptions` from it, so order does not
-   matter (a late `created` after `deleted` re-reads "canceled").
+   subscription fetched from the provider), takes the subscription's **lease**
+   (`billing_subscription_leases`: one worker per subscription across instances; another worker's event
+   for it is simply retried 2 s later, not counted as a failure), **fetches its current state from the
+   provider outside any transaction**, then in one short transaction checks it still holds the lease and
+   writes `business_subscriptions` from that state, so order does not matter (a late `created` after
+   `deleted` re-reads "canceled") and two fetches can never be written out of order.
 4. The business is the subscription's `metadata.business_id`. The event is `IGNORED` (and logged) when
    the event names another business, the business does not exist (deleted), the customer or subscription
    is already linked to another business, the business is linked to another customer, the subscription is
@@ -192,9 +225,11 @@ ends. Everything needed is in the row, so work survives restarts.
 
 ## Retention
 
-The daily retention job also deletes `billing_events` finished (`PROCESSED`/`IGNORED`) and
-`billing_cancellations` `DONE` more than `insight.retention.billing-days` (`RETENTION_BILLING_DAYS`, 30)
-days ago. Pending rows are never purged.
+The daily retention job also deletes `billing_events` finished (`PROCESSED`/`IGNORED`),
+`billing_cancellations` `DONE` and `billing_operations` finished more than
+`insight.retention.billing-days` (`RETENTION_BILLING_DAYS`, 30) days ago. Pending rows are never purged,
+except customer/checkout calls pending for over a day, which are first abandoned (their key can no
+longer be reused). Expired subscription leases are removed.
 
 ## Environment variables (for `infra/.env.example`)
 

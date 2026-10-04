@@ -68,7 +68,10 @@ changing roles; the demo seeder.
 `BillingProvider` interface (backend): `createCustomer(business)`, `createCheckout(business, customer,
 plan, successUrl, cancelUrl, idempotencyKey) → url`, `createPortal(customer, returnUrl) → url`,
 `fetchSubscription(id) → SubscriptionState`, `cancelSubscription(id)` (immediate, idempotent: an
-already canceled or missing subscription counts as done), `verifyWebhook(rawBody, headers) → Event`.
+already canceled or missing subscription counts as done), `expireCheckout(id)` (idempotent),
+`verifyWebhook(rawBody, headers) → Event`. Provider calls are never made inside a database transaction;
+creating calls are durable operations with idempotency keys (`billing_operations`, V19; see
+docs/billing-api.md, "Provider calls").
 
 Selected by `insight.billing.provider` (`BILLING_PROVIDER`): `fake` (default outside `prod`), `stripe`,
 or `none` (billing off: every business Free, billing endpoints `404`, limits still enforced).
