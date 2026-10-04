@@ -38,7 +38,7 @@ Push them to your registry (`docker tag` + `docker push`) or copy them to the ho
 
 **Reproducible:** pinned base images, `npm ci` from the lockfile, and a fixed `project.build.outputTimestamp`
 in `apps/api/pom.xml` (bump it when cutting a release). Two clean builds of the same commit produced
-byte-identical API jars (SHA-256 `e6c20662…`) and web bundles (`82b772e8…`) during verification.
+byte-identical API jars (SHA-256 `32631f36…`) and web bundles (`82b772e8…`) during verification.
 
 ## First deployment
 

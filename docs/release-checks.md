@@ -19,11 +19,18 @@ release notes. Deployment steps: [deployment.md](deployment.md).
 
 ### 1. Intermittent Cube failures — open
 
-**What:** `CubeReportsIntegrationTest` (15 tests) has failed intermittently: 1 of 15 once (backend agent's run,
-billing phase) and 3 of 15 once (account-management phase), each time with Cube itself answering
-`QueryError: Internal: second time provided was later than self` or I/O errors (the API then answers 503
-"temporarily unavailable"), followed by a cascade failure in a dependent test. Reruns on an idle machine
-passed 15/15 every time; the failing runs overlapped other heavy Docker workloads on the same host.
+**What:** `CubeReportsIntegrationTest` (15 tests) has failed intermittently, each time because Cube itself
+answered `QueryError: Internal: second time provided was later than self` or with I/O errors (the API then
+answers 503 "temporarily unavailable", or `Retry-After: 60` where a freshness 503 was expected):
+
+| When | Result |
+|---|---|
+| billing phase (backend agent) | 1 of 15 failed; rerun 15/15 |
+| account-management phase | 3 of 15 failed (one cascading); rerun alone 15/15 |
+| production-ops branch, full suite (`backend-tests.sh all`, no rerun) | 1 of 15 failed (`everyCommittedChangeIsInTheNextReport`: `Retry-After` 60 instead of 5) |
+| production-ops branch, Cube shard (`backend-tests.sh cube`, one rerun) | 15/15 after one flaky rerun (`cubeAndSqlEnginesAgree…`: a 503 from Cube), recorded as flaky |
+
+Every failing run overlapped other heavy Docker workloads on the same host; no wrong figure was ever served.
 
 **Why it matters:** with `REPORTS_ENGINE=cube`, users would see "temporarily unavailable" more often than
 the design intends. The API never shows stale or wrong figures (it answers 503), so it is availability,
@@ -36,6 +43,9 @@ instead of hidden; collect them before deciding.
 **To close:** run the Cube trial ([cube-trial.md](cube-trial.md)) on production-like data and hardware; open
 an issue upstream (Cube 1.7.46) with the error if it reproduces; decide on the engine only after the trial
 passes and the flaky list stays empty for a few weeks of CI.
+
+The upstream Cube image also carries 84 fixable HIGH/CRITICAL vulnerabilities ([security-review.md](security-review.md)):
+upgrade Cube (and rerun its tests and the trial) before enabling it.
 
 ### 2. Real Stripe sandbox — open
 

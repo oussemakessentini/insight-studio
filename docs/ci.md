@@ -30,5 +30,7 @@ are recorded, not hidden. They are an open release check ([release-checks.md](re
 
 The workflow has not run on GitHub (nothing was pushed). Its parts were run locally: `actionlint` (no findings),
 `shellcheck` on every script (no findings), both compose files (`docker compose config`), `promtool check rules`
-(9 rules), the three image builds, the image smoke test (passed), and the backend shards through
-`scripts/ci/backend-tests.sh` (results in the release notes of this branch).
+(9 rules), the three image builds, the image smoke test (passed), the Trivy scans (API and web: 0 fixable
+HIGH/CRITICAL), and the backend through `scripts/ci/backend-tests.sh`: shard a 201 tests and shard b 420 tests,
+all passing; the whole suite (`all`, 637 tests) passed except one intermittent Cube test; the Cube shard passed
+15/15 + 1/1 with one test recorded as flaky after its rerun.
