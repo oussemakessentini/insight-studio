@@ -15,6 +15,9 @@ periods below are the defaults; the settings that change them are listed at the 
 | Invitations (invitee email, role; token SHA-256) | open: until accepted, revoked or expired (7 days); closed: 400 days | deleted by a daily purge |
 | Outgoing emails (`mail_outbox`) | body (with its link) until sent, failed or expired; the row without body 7 days | deleted |
 | Rate-limit hits (SHA-256 of an email or IP, no clear text) | 1 day | deleted |
+| Subscription state (`business_subscriptions`: plan, status, period end, provider customer and subscription ids) | while the business exists | deleted with the business |
+| Billing webhook events (event id, type and object ids only; never the payload) | 30 days after processing | deleted by the daily purge |
+| Subscription cancellations queued by business deletions (provider ids only) | until done, then 30 days | deleted by the daily purge |
 | Cube rollups (Cube Store) | rebuilt after every data change | superseded tables dropped by Cube at its next build once untouched for 1 hour |
 
 Logs name ids (account, business, outbox, import), never passwords, tokens, links or email bodies.
@@ -29,7 +32,12 @@ what will be removed and which other members lose access. In one transaction:
   revision, invitations, memberships, audit events, and the business itself;
 - its pending emails (for example invitations not sent yet) are cancelled and their bodies erased;
 - a Cube purge is queued, in the same transaction. Cleanup in Cube is **eventual**, not immediate
-  and not bound to a fixed deadline; see "Cube" below.
+  and not bound to a fixed deadline; see "Cube" below;
+- if the business has a live paid subscription, its cancellation is queued in the same transaction
+  and a worker cancels it at the payment provider immediately (no refund for the current period),
+  retrying until the provider confirms; webhooks arriving later for it are ignored. The payment
+  provider keeps its own records (customer, invoices) under its own retention rules; Insight Studio
+  sends it only the business name and id.
 
 Members' accounts are not affected; they lose access to the business immediately.
 
@@ -105,6 +113,7 @@ The Cube Store volume holds only rollups that are rebuilt from PostgreSQL; it ne
 | `insight.retention.cron`, `insight.retention.enabled` | daily 03:17 | when the purge runs (`-` or `false` turns it off) |
 | `insight.cube-purge.sweep-delay` (`CUBE_PURGE_SWEEP_DELAY`) | `PT70M` | must exceed `CUBEJS_TOUCH_PRE_AGG_TIMEOUT` and `CUBEJS_DB_QUERY_TIMEOUT` |
 | `insight.cube-purge.time-zones` (`CUBEJS_SCHEDULED_REFRESH_TIMEZONES`) | — | zones rebuilt besides the businesses' own |
+| `insight.retention.billing-days` (`RETENTION_BILLING_DAYS`) | 30 | processed billing webhook events and finished subscription cancellations |
 | `server.servlet.session.timeout` | 8h | idle sessions |
 
 | `insight.cube-purge.retry-delay`, `max-retry-delay`, `alert-after-attempts` | 5 min, 1 h, 6 | purge retries (never given up) |
