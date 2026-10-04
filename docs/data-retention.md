@@ -28,21 +28,43 @@ what will be removed and which other members lose access. In one transaction:
   and sale items, products, stores, import history, saved reports, charts, dashboards and every
   revision, invitations, memberships, audit events, and the business itself;
 - its pending emails (for example invitations not sent yet) are cancelled and their bodies erased;
-- a Cube purge is queued. Cube's rollups are shared by every business, so the business's figures
-  live inside shared tables. A worker on the API asks Cube to rebuild every rollup in every relevant
-  time zone (the scheduled zones, the deleted business's zone and every remaining business's zone)
-  until each answers from data that no longer contains the business. Cube 1.7 drops a superseded
-  table only at the end of a later build, and only once nothing has used it for
-  `CUBEJS_TOUCH_PRE_AGG_TIMEOUT` (1 hour in `infra/compose.yaml`; Cube's default is 24 hours). So
-  after `CUBE_PURGE_SWEEP_DELAY` (70 minutes) the worker forces one more rebuild, which drops them.
-  **Within about 70 minutes of a deletion no Cube Store table holds the business's rows**; until
-  then they sit only in superseded tables that no query can reach (the API answers `404` for a
-  deleted business before calling Cube). `CubePurgeIntegrationTest` checks this against Cube Store
-  itself. Without Cube the purge is skipped.
+- a Cube purge is queued, in the same transaction. Cleanup in Cube is **eventual**, not immediate
+  and not bound to a fixed deadline; see "Cube" below.
 
 Members' accounts are not affected; they lose access to the business immediately.
 
 **Before deleting**, an owner can download the business export (ZIP of CSV and JSON files).
+
+### Cube
+
+Cube's rollups are shared by every business, so a deleted business's figures live inside shared
+tables, and Cube 1.7 drops a superseded table only at the end of a later build, once nothing has
+used it for `CUBEJS_TOUCH_PRE_AGG_TIMEOUT` (1 hour in `infra/compose.yaml`; Cube's default is 24
+hours). The purge (a row in `cube_purge_requests`) therefore works in two phases:
+
+1. **Rebuild**: every rollup in every relevant time zone (the scheduled zones, the deleted business's
+   zone and every remaining business's zone) is rebuilt until it answers from data without the
+   business.
+2. **Sweep**: once `CUBE_PURGE_SWEEP_DELAY` (70 minutes) has passed since the deletion, one more
+   forced rebuild makes Cube drop the superseded tables. The purge is then `DONE`.
+
+When Cube and the API are healthy, the cleanup is therefore complete shortly after the sweep delay
+(about 70 minutes; `CubePurgeIntegrationTest` checks the result against Cube Store itself). **During
+an outage it takes longer**, with no fixed deadline:
+
+- every attempt that fails (Cube down, a rebuild that does not finish in time) is recorded in the row
+  (`attempts`, `last_error`, `next_attempt_at`) and retried, **without limit**, after 5 minutes,
+  doubling up to 1 hour between attempts; from the 6th failure in a row each failure is logged as an
+  error so it can be alerted on;
+- the row lives in PostgreSQL, so restarts lose nothing; a worker that dies mid-purge loses its lease
+  (15 minutes) and another instance, or the restarted one, takes the purge over;
+- an API instance without a Cube connection never claims purges: they stay `PENDING` until an
+  instance with Cube runs them (with no Cube at all, nothing of the business was ever in Cube).
+
+Until the purge is done, the deleted rows remain only in superseded tables no query can reach: the
+API answers `404` for a deleted business before it ever calls Cube, and the API is Cube's only client.
+`CubePurgeRetryIntegrationTest` covers failures, backoff, restarts and lease takeover.
+
 
 ## Deleting an account
 
@@ -85,6 +107,6 @@ The Cube Store volume holds only rollups that are rebuilt from PostgreSQL; it ne
 | `insight.cube-purge.time-zones` (`CUBEJS_SCHEDULED_REFRESH_TIMEZONES`) | — | zones rebuilt besides the businesses' own |
 | `server.servlet.session.timeout` | 8h | idle sessions |
 
-Every API instance that runs the purge worker needs the Cube connection (`INSIGHT_CUBE_URL`), or set
-`insight.cube-purge.enabled=false` on it; an instance without Cube marks the purges it claims as
-skipped.
+| `insight.cube-purge.retry-delay`, `max-retry-delay`, `alert-after-attempts` | 5 min, 1 h, 6 | purge retries (never given up) |
+
+An API instance without a Cube connection leaves purges pending for one that has it.

@@ -174,8 +174,8 @@ ignored) → `204` and the session cookie cleared. In one transaction:
 ### Cube
 
 Rollups are shared by every business, so a deletion cannot drop "the business's rollup". The purge
-worker (any instance, lease like the mail outbox; only when the API has Cube configured, otherwise the
-request is `SKIPPED`) asks Cube to rebuild every rollup (`"cache": "must-revalidate"`) in every time
+worker (any instance with a Cube connection, lease like the mail outbox; retried until it succeeds, so
+the cleanup is eventual) asks Cube to rebuild every rollup (`"cache": "must-revalidate"`) in every time
 zone of `CUBEJS_SCHEDULED_REFRESH_TIMEZONES`, the deleted business's zone and the zones of the remaining
 businesses, until each answers from a data version ≥ the request's. Superseded Cube Store tables are
 then dropped by Cube itself; the backend agent determines and documents the exact Cube 1.7.46 behaviour

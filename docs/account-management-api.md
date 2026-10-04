@@ -162,18 +162,26 @@ time with `FOR UPDATE SKIP LOCKED` and a lease (`locked_until`), like the mail o
    `must-revalidate` and a token for a remaining business (its marker rows carry `data_version`) until
    the answer's version is at least the request's. `line_items` has no version measure and is asked
    last, once the shared refresh key has moved on. Each zone has `zone-timeout` (2 minutes).
-2. **Sweep** (`sweep-delay` after the deletion, default 70 minutes): bump `report_data_version` (a
+2. **Sweep** (once `sweep-delay` has passed since the deletion, default 70 minutes): bump `report_data_version` (a
    harmless change: every cache and rollup is simply rebuilt once) and rebuild everything again as in
    step 1. These builds drop every table that was neither used nor touched since the timeouts, i.e.
    every table built before the deletion. The request is then `DONE`.
 
-A failed phase is retried after `retry-delay` (5 minutes), at most `max-attempts` (6) times, then the
-request is `FAILED` with `last_error` (and an error log naming the request). Without a Cube connection
-the request is `SKIPPED`.
+Cleanup is **eventual**: there is no fixed deadline while Cube or the API is unavailable.
 
-**Every API instance that runs the worker must have the Cube connection** (`INSIGHT_CUBE_URL`,
-`CUBEJS_API_SECRET`), or set `insight.cube-purge.enabled=false` on the ones without it; an instance
-without Cube marks the requests it claims `SKIPPED`.
+- A failed phase is retried **until it succeeds**: after `retry-delay` (5 minutes), doubling after each
+  further failure up to `max-retry-delay` (1 hour). Each attempt is recorded in the row (`attempts`,
+  `last_error`, `next_attempt_at`); from `alert-after-attempts` (6) failures in a row every failure is
+  logged at `ERROR`. The statuses `FAILED` and `SKIPPED` (allowed by V16) are no longer written.
+- Everything is in the row, so a restart loses nothing; a worker that dies mid-purge keeps its claim
+  only until its `lease` (15 minutes) ends, then any instance takes it over.
+- An instance without a Cube connection never claims requests; they stay `PENDING` for an instance
+  that has one.
+
+`cubepurge/CubePurgeRetryIntegrationTest`: failures persisted with capped backoff and never given up,
+a restarted instance finishing a purge that failed before (both phases), a failed sweep retried, a
+crashed instance's purge taken over when its lease ends, and an instance without Cube leaving purges
+pending.
 
 ### Settings the integrator must add (`infra/compose.yaml`, Cube service and refresh worker)
 
