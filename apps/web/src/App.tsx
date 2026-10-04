@@ -21,6 +21,7 @@ import { isAdminOrOwner } from './lib/settingsAccess'
 import {
   currentLocation,
   isAuthRoute,
+  isFakeBillingRoute,
   matchRoute,
   navigate,
   requiresAccount,
@@ -41,7 +42,9 @@ import {
 } from './lib/session'
 import { AccountPage } from './pages/AccountPage'
 import { ActivityPage } from './pages/ActivityPage'
+import { BillingPage } from './pages/BillingPage'
 import { BusinessSettingsPage } from './pages/BusinessSettingsPage'
+import { FakeBillingPage } from './pages/FakeBillingPage'
 import { ForgotPasswordPage } from './pages/auth/ForgotPasswordPage'
 import { InvitePage } from './pages/auth/InvitePage'
 import { VerifyEmailPage } from './pages/auth/VerifyEmailPage'
@@ -141,6 +144,15 @@ function Screen({ route }: { route: Route }) {
     // Anonymous visitors see the read-only demo if the API offers one; otherwise they sign in.
     if (requiresAccount(route) || !session.demo?.enabled) return <Redirect to={signInHref()} />
     return <BusinessWorkspace key="demo" businessId={null} route={route} />
+  }
+
+  // The fake payment provider's pages (billing contract §7): signed in, outside the workspace.
+  if (isFakeBillingRoute(route)) {
+    return (
+      <OnboardingFrame>
+        <FakeBillingPage key={`${route.name}|${route.sessionId}`} kind={route.name === 'fakeCheckout' ? 'checkout' : 'portal'} sessionId={route.sessionId} />
+      </OnboardingFrame>
+    )
   }
 
   if (businessId === null) {
@@ -297,6 +309,7 @@ function Workspace({
       {route.name === 'catalog' && (access.canManageCatalog ? <CatalogPage {...pageProps} /> : noAccess)}
       {route.name === 'businessSettings' && (isAdminOrOwner(access) ? <BusinessSettingsPage {...pageProps} /> : noAccess)}
       {route.name === 'activity' && (isAdminOrOwner(access) ? <ActivityPage {...pageProps} /> : noAccess)}
+      {route.name === 'billing' && (isAdminOrOwner(access) ? <BillingPage {...pageProps} /> : noAccess)}
       {route.name === 'account' && <AccountPage />}
       {route.name === 'newBusiness' && <NewBusinessPage />}
       {route.name === 'notFound' && <NotFound homeHref={href('/')} />}
@@ -348,6 +361,8 @@ function sectionOf(route: Route): Section | null {
       return 'business'
     case 'activity':
       return 'activity'
+    case 'billing':
+      return 'billing'
     case 'account':
       return 'account'
     case 'newBusiness':
@@ -371,6 +386,7 @@ function sectionHrefs(href: (path: string) => string): Record<Section, string> {
     catalog: href('/settings/catalog'),
     business: href('/settings/business'),
     activity: href('/settings/activity'),
+    billing: href('/settings/billing'),
     account: href('/account'),
     newBusiness: href('/businesses/new'),
   }

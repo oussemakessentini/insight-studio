@@ -34,6 +34,9 @@ export type Route =
   | { name: 'catalog' }
   | { name: 'businessSettings' }
   | { name: 'activity' }
+  | { name: 'billing' }
+  | { name: 'fakeCheckout'; sessionId: string }
+  | { name: 'fakePortal'; sessionId: string }
   | { name: 'notFound' }
 
 /** Pages for signing in and recovering an account; they don't need a session or a business. */
@@ -51,8 +54,15 @@ export function requiresAccount(route: Route): boolean {
     route.name === 'members' ||
     route.name === 'catalog' ||
     route.name === 'businessSettings' ||
-    route.name === 'activity'
+    route.name === 'activity' ||
+    route.name === 'billing' ||
+    isFakeBillingRoute(route)
   )
+}
+
+/** The fake payment provider's checkout and portal pages (billing contract §7). */
+export function isFakeBillingRoute(route: Route): route is Route & { name: 'fakeCheckout' | 'fakePortal' } {
+  return route.name === 'fakeCheckout' || route.name === 'fakePortal'
 }
 
 const NAVIGATE_EVENT = 'app:navigate'
@@ -200,7 +210,21 @@ export function matchRoute(pathname: string): Route {
   if (path === '/settings/catalog') return { name: 'catalog' }
   if (path === '/settings/business') return { name: 'businessSettings' }
   if (path === '/settings/activity') return { name: 'activity' }
+  if (path === '/settings/billing') return { name: 'billing' }
+  const fakeBilling = /^\/billing\/fake\/(checkout|portal)\/([^/]+)$/.exec(path)
+  if (fakeBilling) {
+    const sessionId = safeDecode(fakeBilling[2])
+    if (sessionId) return { name: fakeBilling[1] === 'checkout' ? 'fakeCheckout' : 'fakePortal', sessionId }
+  }
   return { name: 'notFound' }
+}
+
+function safeDecode(segment: string): string | null {
+  try {
+    return decodeURIComponent(segment)
+  } catch {
+    return null
+  }
 }
 
 /**

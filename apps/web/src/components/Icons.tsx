@@ -231,3 +231,11 @@ export const DownloadIcon = (p: IconProps) => (
     <path d="M12 4v11M7 10l5 5 5-5M5 20h14" />
   </Icon>
 )
+
+/** Billing: a payment card. */
+export const CardIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <rect x="3" y="5" width="18" height="14" rx="2" />
+    <path d="M3 10h18M7 15h4" />
+  </Icon>
+)
