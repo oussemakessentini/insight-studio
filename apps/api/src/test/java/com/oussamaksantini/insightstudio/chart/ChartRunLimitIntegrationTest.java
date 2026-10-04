@@ -147,4 +147,66 @@ class ChartRunLimitIntegrationTest extends PostgresIntegrationTest {
             pool.shutdownNow();
         }
     }
+
+    /**
+     * The limit is shared by every instance (chart_run_slots): runs held on one instance take the slots a
+     * second instance sees, and a slot of an instance that died stops counting once it expires.
+     */
+    @Test
+    void theLimitIsSharedAcrossInstancesAndSlotsOfACrashedInstanceExpire() throws Exception {
+        SqlFixture db = new SqlFixture(jdbc);
+        db.clear();
+        long business = db.business("Shared Co", "shared-co", "EUR", "Europe/Paris");
+        long store = db.store(business, "S", "Store", "Paris");
+        long product = db.product(business, "P", "Tee", "Tops", "20.00");
+        db.sale(store, "R1", "2026-06-01T10:00:00Z", product, 2, "20.00");
+        new TestAccounts(jdbc).member("owner@shared.test", business, Role.OWNER);
+        Map<String, Object> limitTwo = Map.of("insight.charts.max-concurrent-runs-per-business", 2,
+                "insight.charts.statement-timeout", "PT30S");
+
+        ExecutorService pool = Executors.newFixedThreadPool(3);
+        try (ApiInstance one = ApiInstance.start(database, limitTwo);
+                ApiInstance two = ApiInstance.start(database, limitTwo);
+                HttpApiClient a1 = signIn(one, "owner@shared.test");
+                HttpApiClient a2 = signIn(one, "owner@shared.test");
+                HttpApiClient b = signIn(two, "owner@shared.test")) {
+            ChartRunLimiter limiter = one.bean(ChartRunLimiter.class);
+            String data = "/api/charts/%d/data".formatted(createChart(a1, "Shared chart"));
+
+            Future<HttpResponse<String>> first;
+            Future<HttpResponse<String>> second;
+            try (Connection locker = dataSource.getConnection()) {
+                locker.setAutoCommit(false);
+                try (Statement lock = locker.createStatement()) {
+                    lock.execute("LOCK TABLE sale_items IN ACCESS EXCLUSIVE MODE");
+                }
+                first = pool.submit(() -> a1.get(data));
+                second = pool.submit(() -> a2.get(data));
+                await(() -> limiter.running(business) == 2);
+
+                // Both slots are held on instance one: instance two refuses at once.
+                HttpResponse<String> refused = b.get(data);
+                assertThat(refused.statusCode()).as(refused.body()).isEqualTo(429);
+                assertThat(refused.headers().firstValue("Retry-After")).hasValue("1");
+                assertThat(two.bean(ChartRunLimiter.class).running(business)).isEqualTo(2);
+                locker.rollback();
+            }
+            assertThat(first.get(30, TimeUnit.SECONDS).statusCode()).isEqualTo(200);
+            assertThat(second.get(30, TimeUnit.SECONDS).statusCode()).isEqualTo(200);
+            await(() -> limiter.running(business) == 0);
+            assertThat(b.get(data).statusCode()).isEqualTo(200);
+
+            // An instance died holding both slots: they count until they expire, then are reclaimed.
+            jdbc.update("""
+                    INSERT INTO chart_run_slots (holder, business_id, expires_at)
+                    VALUES (gen_random_uuid(), ?, now() + interval '1 hour'), (gen_random_uuid(), ?, now() + interval '1 hour')
+                    """, business, business);
+            assertThat(b.get(data).statusCode()).isEqualTo(429);
+            jdbc.update("UPDATE chart_run_slots SET expires_at = now() - interval '1 second' WHERE business_id = ?", business);
+            assertThat(b.get(data).statusCode()).isEqualTo(200);
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM chart_run_slots", Long.class)).isZero();
+        } finally {
+            pool.shutdownNow();
+        }
+    }
 }
