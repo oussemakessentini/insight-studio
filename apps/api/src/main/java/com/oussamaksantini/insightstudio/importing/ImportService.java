@@ -2,6 +2,9 @@ package com.oussamaksantini.insightstudio.importing;
 
 import com.oussamaksantini.insightstudio.audit.AuditAction;
 import com.oussamaksantini.insightstudio.audit.AuditLog;
+import com.oussamaksantini.insightstudio.billing.PlanLimitException;
+import com.oussamaksantini.insightstudio.billing.PlanLimits;
+import com.oussamaksantini.insightstudio.billing.PlanResource;
 import com.oussamaksantini.insightstudio.business.Business;
 import com.oussamaksantini.insightstudio.common.web.ApiException;
 import com.oussamaksantini.insightstudio.importing.CatalogValidator.Plan;
@@ -56,6 +59,11 @@ import tools.jackson.databind.json.JsonMapper;
  * A dry run, a preview and an errors file never write anything; every real attempt is recorded in
  * the import history, a rejected one without any of its data. Every public method requires the
  * ADMIN role (or OWNER) in the current business, with a verified email address.
+ *
+ * <p>Plan limits (docs/billing-contract.md §2): a real import is refused ({@code 409 plan_limit})
+ * when the business has used its imports for the month, and a stores import when the stores it would
+ * create do not fit the plan, as a whole before anything is written. A dry run (and the errors file)
+ * reports both as file errors instead. Rejected imports and dry runs do not count.
  */
 @Service
 public class ImportService {
@@ -82,14 +90,16 @@ public class ImportService {
     private final TransactionTemplate transaction;
     private final TransactionTemplate readOnly;
     private final AuditLog audit;
+    private final PlanLimits planLimits;
 
     ImportService(ReportingContext reporting, CurrentBusiness current, ImportQueries queries, TransactionTemplate transaction,
-            AuditLog audit) {
+            AuditLog audit, PlanLimits planLimits) {
         this.reporting = reporting;
         this.current = current;
         this.queries = queries;
         this.transaction = transaction;
         this.audit = audit;
+        this.planLimits = planLimits;
         this.readOnly = new TransactionTemplate(transaction.getTransactionManager());
         this.readOnly.setReadOnly(true);
     }
@@ -217,6 +227,11 @@ public class ImportService {
             result = transaction.execute(status -> {
                 // One import per business at a time, so two uploads can't both pass the duplicate checks.
                 queries.lockImports(upload.business().getId());
+                // The plan's monthly imports, then (stores) the plan's stores: locked before counting.
+                planLimits.requireRoom(upload.business().getId(), PlanResource.IMPORTS_PER_MONTH);
+                if (upload.kind() == ImportKind.STORES) {
+                    planLimits.lock(upload.business().getId(), PlanResource.STORES);
+                }
                 Checked checked = validate(upload, false);
                 if (checked.result().status() != ImportStatus.VALIDATED) {
                     return checked.result();
@@ -340,6 +355,20 @@ public class ImportService {
             ImportError error = ImportError.file(
                     "This file was already imported on %s (same content). Nothing was imported.".formatted(date));
             return rejected(upload, dryRun, counts, List.of(error));
+        }
+        if (dryRun) {
+            // A real import checks this before validating (409); a dry run says it would be refused.
+            planLimits.exceeded(businessId, PlanResource.IMPORTS_PER_MONTH, 1)
+                    .ifPresent(e -> errors.add(ImportError.file(e.getMessage())));
+        }
+        if (stores != null && !stores.creates().isEmpty()) {
+            PlanLimitException over = planLimits.exceeded(businessId, PlanResource.STORES, stores.creates().size()).orElse(null);
+            if (over != null) {
+                if (!dryRun && errors.isEmpty()) {
+                    throw over;   // refused as a whole before anything is written
+                }
+                errors.add(ImportError.file(over.getMessage()));
+            }
         }
         if (!errors.isEmpty()) {
             List<String> fields = kind.fieldNames();

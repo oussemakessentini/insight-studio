@@ -22,7 +22,9 @@ import org.springframework.transaction.support.TransactionTemplate;
  *   <li>password-reset and email-verification tokens {@code insight.retention.token-days} (7) after
  *       they were used or expired;</li>
  *   <li>invitations closed (accepted, revoked or expired) for more than
- *       {@code insight.retention.invitation-days} (400); open invitations are never purged.</li>
+ *       {@code insight.retention.invitation-days} (400); open invitations are never purged;</li>
+ *   <li>billing webhook events finished (processed or ignored) and subscription cancellations done
+ *       more than {@code insight.retention.billing-days} (30) ago; pending ones are never purged.</li>
  * </ul>
  */
 @Component
@@ -44,10 +46,11 @@ public class RetentionJob {
             @DefaultValue("0 17 3 * * *") String cron,
             @DefaultValue("400") int auditDays,
             @DefaultValue("7") int tokenDays,
-            @DefaultValue("400") int invitationDays) {
+            @DefaultValue("400") int invitationDays,
+            @DefaultValue("30") int billingDays) {
 
         public RetentionProperties {
-            if (auditDays < 1 || tokenDays < 1 || invitationDays < 1) {
+            if (auditDays < 1 || tokenDays < 1 || invitationDays < 1 || billingDays < 1) {
                 throw new IllegalStateException("insight.retention.*-days must be at least 1");
             }
         }
@@ -78,6 +81,7 @@ public class RetentionJob {
         Map<String, Object> audit = Map.of("days", properties.auditDays());
         Map<String, Object> tokens = Map.of("days", properties.tokenDays());
         Map<String, Object> invitations = Map.of("days", properties.invitationDays());
+        Map<String, Object> billing = Map.of("days", properties.billingDays());
         transactions.executeWithoutResult(status -> {
             deleted.put("auditEvents", jdbc.update(
                     "DELETE FROM audit_events WHERE created_at < now() - make_interval(days => :days)", audit));
@@ -93,6 +97,14 @@ public class RetentionJob {
                       AND LEAST(COALESCE(accepted_at, 'infinity'), COALESCE(revoked_at, 'infinity'), expires_at)
                           < now() - make_interval(days => :days)
                     """, invitations));
+            deleted.put("billingEvents", jdbc.update("""
+                    DELETE FROM billing_events
+                    WHERE status <> 'PENDING' AND processed_at < now() - make_interval(days => :days)
+                    """, billing));
+            deleted.put("billingCancellations", jdbc.update("""
+                    DELETE FROM billing_cancellations
+                    WHERE status = 'DONE' AND finished_at < now() - make_interval(days => :days)
+                    """, billing));
         });
         log.info("Retention purge: {}", deleted);
         return deleted;

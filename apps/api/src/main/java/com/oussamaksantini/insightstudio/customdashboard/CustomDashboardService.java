@@ -2,6 +2,8 @@ package com.oussamaksantini.insightstudio.customdashboard;
 
 import com.oussamaksantini.insightstudio.audit.AuditAction;
 import com.oussamaksantini.insightstudio.audit.AuditLog;
+import com.oussamaksantini.insightstudio.billing.PlanLimits;
+import com.oussamaksantini.insightstudio.billing.PlanResource;
 import com.oussamaksantini.insightstudio.common.web.ApiException;
 import com.oussamaksantini.insightstudio.common.web.FieldErrorsException;
 import com.oussamaksantini.insightstudio.common.web.FieldErrorsException.FieldError;
@@ -61,13 +63,15 @@ public class CustomDashboardService {
     private final CustomDashboardQueries queries;
     private final DashboardLayoutValidator validator;
     private final AuditLog audit;
+    private final PlanLimits planLimits;
 
     CustomDashboardService(CurrentBusiness current, CustomDashboardQueries queries, DashboardLayoutValidator validator,
-            AuditLog audit) {
+            AuditLog audit, PlanLimits planLimits) {
         this.current = current;
         this.queries = queries;
         this.validator = validator;
         this.audit = audit;
+        this.planLimits = planLimits;
     }
 
     /** A dashboard's audit event: its name, revision and number of widgets (never its layout). */
@@ -239,6 +243,7 @@ public class CustomDashboardService {
             throw ApiException.conflict("A business can have at most %d dashboards. Delete one before adding another."
                     .formatted(DashboardRules.MAX_DASHBOARDS));
         }
+        planLimits.requireRoom(businessId, PlanResource.DASHBOARDS);
         if (checkName && queries.nameTaken(businessId, name, null)) {
             throw nameConflict(name);
         }

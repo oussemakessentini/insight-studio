@@ -8,6 +8,7 @@ import com.oussamaksantini.insightstudio.accountdata.dto.Dtos.BusinessRef;
 import com.oussamaksantini.insightstudio.accountdata.dto.Dtos.OtherMember;
 import com.oussamaksantini.insightstudio.audit.AuditAction;
 import com.oussamaksantini.insightstudio.audit.AuditLog;
+import com.oussamaksantini.insightstudio.billing.BillingDeletion;
 import com.oussamaksantini.insightstudio.business.BusinessService;
 import com.oussamaksantini.insightstudio.business.MemberAccess;
 import com.oussamaksantini.insightstudio.common.web.ApiException;
@@ -53,10 +54,12 @@ public class BusinessDataService {
     private final TransactionTemplate transactions;
     private final TransactionTemplate snapshot;
     private final TransactionTemplate readOnly;
+    private final BillingDeletion billing;
 
     BusinessDataService(MemberAccess access, Memberships memberships, AccountDataQueries queries, BusinessExport export,
             AuditLog audit, AccountService accounts, RateLimiter limits, Clock clock, PlatformTransactionManager manager,
-            PublicDemo demo) {
+            PublicDemo demo, BillingDeletion billing) {
+        this.billing = billing;
         this.access = access;
         this.demo = demo;
         this.memberships = memberships;
@@ -107,7 +110,7 @@ public class BusinessDataService {
                     .map(m -> new OtherMember(m.userId(), m.displayName(), m.role()))
                     .toList();
             return new BusinessDeletionPreview(new BusinessRef(business.id(), business.name()),
-                    queries.businessCounts(businessId), others);
+                    queries.businessCounts(businessId), others, billing.preview(businessId).orElse(null));
         });
     }
 
@@ -135,7 +138,10 @@ public class BusinessDataService {
             if (memberships.role(caller.userId(), businessId).filter(r -> r == Role.OWNER).isEmpty()) {
                 throw notFound();
             }
+            // Before the rows go: a live subscription is queued for cancellation in this transaction.
+            boolean cancel = billing.onBusinessDeleted(businessId);
             Map<String, Integer> rows = queries.deleteBusiness(businessId);
+            rows.put("billing_cancellations", cancel ? 1 : 0);
             rows.put("mail_outbox (expired)", queries.expireBusinessMail(businessId));
             long purge = queries.insertCubePurge(businessId, locked.timeZone());
             rows.put("cube_purge_requests", (int) purge);

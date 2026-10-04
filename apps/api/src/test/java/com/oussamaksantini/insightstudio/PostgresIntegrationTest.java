@@ -14,13 +14,20 @@ import org.springframework.context.annotation.Import;
  */
 // The shared context captures emails instead of queueing them; no outbox worker runs in it (the
 // mail tests start their own instances with one).
-// Neither the Cube purge worker nor the retention purge runs on its own: tests call them.
+// Neither the Cube purge worker, the billing workers nor the retention purge runs on its own: tests call them.
+// The Free plan's limits are raised to the absolute caps here so that tests written before billing can
+// create what they need; the billing tests (BillingIntegrationTest) run with the shipped defaults.
 @SpringBootTest(webEnvironment = WebEnvironment.RANDOM_PORT, properties = {
-    "insight.mail.outbox.enabled=false", "insight.cube-purge.poll-interval=PT24H", "insight.retention.cron=-"})
+    "insight.mail.outbox.enabled=false", "insight.cube-purge.poll-interval=PT24H", "insight.retention.cron=-",
+    "insight.billing.worker.poll-interval=PT24H",
+    "insight.billing.plans.free.limits.members=100000", "insight.billing.plans.free.limits.stores=100000",
+    "insight.billing.plans.free.limits.charts=200", "insight.billing.plans.free.limits.dashboards=50",
+    "insight.billing.plans.free.limits.imports-per-month=100000"})
 @AutoConfigureMockMvc
 @Import({TestcontainersConfiguration.class, TestSupportConfiguration.class})
 public abstract class PostgresIntegrationTest {
 
-    protected static final String TRUNCATE_ALL = "TRUNCATE audit_events, cube_purge_requests, mail_outbox, email_verification_tokens, spring_session, rate_limit_hits, invitations, password_reset_tokens, dashboard_chart_refs, dashboard_revisions, dashboards, chart_definition_revisions, chart_definitions, saved_reports, memberships, users, import_batches, "
+    protected static final String TRUNCATE_ALL = "TRUNCATE billing_events, billing_cancellations, fake_billing_objects, "
+            + "business_subscriptions, audit_events, cube_purge_requests, mail_outbox, email_verification_tokens, spring_session, rate_limit_hits, invitations, password_reset_tokens, dashboard_chart_refs, dashboard_revisions, dashboards, chart_definition_revisions, chart_definitions, saved_reports, memberships, users, import_batches, "
             + "sale_items, sales, products, stores, businesses RESTART IDENTITY CASCADE";
 }
