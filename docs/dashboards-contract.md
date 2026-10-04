@@ -78,7 +78,8 @@ Limits: 50 dashboards per business (`409`), 24 widgets per layout (`400`).
 
 Widgets run with the existing `GET /api/charts/{chartId}/data` (unchanged permissions: VIEWER+), with
 its `503`/`Retry-After` answers. **Server-side concurrency limit**: at most 6 chart data runs in progress
-per business per API instance; more → `429` problem detail with `Retry-After: 1` (no work started).
+per business across all API instances (since V20; per instance before); more → `429` problem detail with
+`Retry-After: 1` (no work started).
 The public demo has no custom dashboards (anonymous → `401`).
 
 ## 5. Storage (integrator: Flyway `V15__create_dashboards.sql`, done)

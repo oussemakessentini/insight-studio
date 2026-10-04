@@ -200,6 +200,26 @@ are never written to the API log. Account settings:
 For deployments (the `prod` profile, HTTPS, reverse proxies, SMTP) see
 [docs/production.md](docs/production.md).
 
+## Production and operations
+
+Container images (`apps/api/Dockerfile`, `apps/web/Dockerfile`, `services/analytics/Dockerfile`; pinned base
+images, reproducible builds) and a production compose stack (`infra/compose.prod.yaml`: only the web
+container is published; PostgreSQL, the API and its management port stay internal; optional Cube and
+Prometheus profiles).
+
+| Topic | Where |
+|---|---|
+| Build, first deployment, upgrade, rollback | [docs/deployment.md](docs/deployment.md) |
+| Health probes, structured logs, metrics, alerts, runbooks, background jobs | [docs/operations.md](docs/operations.md) |
+| Backups and the verified restore drill | [docs/backup-restore.md](docs/backup-restore.md) |
+| Load tests (k6) and the recorded baseline | [docs/load-testing.md](docs/load-testing.md) |
+| CI (GitHub Actions) and how the suites are split | [docs/ci.md](docs/ci.md) |
+| Dependency and image security review | [docs/security-review.md](docs/security-review.md) |
+| What must pass before a release, and what is still open | [docs/release-checks.md](docs/release-checks.md) |
+
+Open release checks: intermittent Cube failures (SQL stays the report engine) and the billing flows on a real
+Stripe sandbox (billing stays off in production).
+
 **CSV import** of stores, products and sales is available to owners and admins of their own
 business, never to the public demo. Download a template from the Import page, or use your own
 column names and match them to the fields there. File format, rules and a sample file:
@@ -346,7 +366,7 @@ belonging to other businesses return `404`.
 | `/api/saved-reports[/{id}]` | Saved report definitions: list and get (any member), create, replace/rename, delete (owners and admins) |
 | `/api/saved-reports/{id}/report[.csv\|.pdf]` | Run a saved report for its range resolved today in the business time zone; CSV and PDF exports |
 | `/api/charts/catalog` | Supported metrics, groupings, visualizations, filters, limits and the combinations that are not allowed |
-| `/api/charts[/{id}]`, `/duplicate`, `/revisions[/{n}]`, `/data`, `/api/charts/preview` | Chart definitions with revisions (owners and admins write, every member reads and runs); only validated, allowlisted definitions run, within date-range, size and time limits; at most 6 chart runs at a time per business per API instance (`429` beyond) |
+| `/api/charts[/{id}]`, `/duplicate`, `/revisions[/{n}]`, `/data`, `/api/charts/preview` | Chart definitions with revisions (owners and admins write, every member reads and runs); only validated, allowlisted definitions run, within date-range, size and time limits; at most 6 chart runs at a time per business across all API instances (`429` beyond) |
 | `/api/dashboards[/{id}]`, `/duplicate`, `/revisions`, `/api/charts/{id}/dashboards` | Custom dashboards with versioned layouts (owners and admins write, every member reads); saves carry `expectedRevision` and a stale one answers `409` with the current revision; a deleted chart's widgets are reported as missing |
 
 Details: [docs/stores.md](docs/stores.md), [docs/reports.md](docs/reports.md),
@@ -393,6 +413,8 @@ npm run lint
 npm run build
 npm test
 ```
+
+CI runs the backend suite in shards (`scripts/ci/backend-tests.sh a|b|cube|all`); see [docs/ci.md](docs/ci.md).
 
 Backend tests start a throwaway PostgreSQL 16 container with Testcontainers, so Docker must be
 running. They do not touch your local database. The tests cover:
@@ -504,6 +526,9 @@ running. They do not touch your local database. The tests cover:
 - Subscription billing per business: configurable Free and Pro plans with race-free limits, a local
   fake provider and a Stripe integration in test mode, durable webhook processing and cancellation on
   business deletion
+- Production readiness: CI, reproducible images, a production compose stack, health probes, structured
+  logs, metrics and alerts, backups with a restore drill, chart run limits shared across instances, load
+  tests and deployment/rollback instructions
 
 **Later:**
 
@@ -517,4 +542,4 @@ running. They do not touch your local database. The tests cover:
 - Product mix over time
 - PDF export of the dashboard view
 - Run the Stripe test-mode flows against a real Stripe sandbox (setup in [docs/billing-api.md](docs/billing-api.md))
-- Deployment (containerized API + static web build)
+- Deploy to a real host (nothing here provisions or deploys; see [docs/deployment.md](docs/deployment.md))

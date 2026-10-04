@@ -150,7 +150,8 @@ body**:
 ## Chart run limit (`chart.ChartRunLimiter`)
 
 - At most `insight.charts.max-concurrent-runs-per-business` (`CHARTS_MAX_CONCURRENT_RUNS_PER_BUSINESS`,
-  default **6**) chart runs in progress per business **per API instance**, counting
+  default **6**) chart runs in progress per business **across all API instances** (`chart_run_slots`,
+  Flyway V20; docs/operations.md), counting
   `GET /api/charts/{id}/data` and `POST /api/charts/preview` together. One more is refused immediately:
 
   ```
@@ -193,8 +194,9 @@ body**:
 
 ## Limitations
 
-- The run limit is per API instance (in memory); with several instances a business may have
-  `instances × limit` runs in progress. The client queue (3 per tab, contract §6) keeps normal use
+- The run limit is shared by every API instance (one row per run in `chart_run_slots`, taken in a short
+  transaction serialised per business; a crashed instance's slots stop counting after
+  `insight.charts.run-slot-ttl`, 2 minutes). The client queue (3 per tab, contract §6) keeps normal use
   well below it.
 - `GET /api/charts/{id}/dashboards` reflects current layouts only; older revisions that placed the
   chart are not listed.
