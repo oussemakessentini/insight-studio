@@ -11,7 +11,7 @@ import org.springframework.stereotype.Component;
 /**
  * When each background job of this instance last completed a round, and when one last failed
  * (docs/operations.md, "Background jobs"). Workers report every poll; the metrics
- * {@code insight_job_last_success_seconds{job}} and {@code insight_job_last_failure_seconds{job}} (Unix time)
+ * {@code insight_job_last_success_seconds{worker}} and {@code insight_job_last_failure_seconds{worker}} (Unix time)
  * let alerts catch a worker that stopped running or keeps failing as a whole.
  */
 @Component
@@ -50,11 +50,11 @@ public class JobHeartbeats {
             return;
         }
         Gauge.builder("insight.job.last.success", successes, m -> seconds(m.get(job)))
-                .tag("job", job).baseUnit("seconds")
+                .tag("worker", job).baseUnit("seconds")
                 .description("Unix time of the job's last successful round on this instance (0: none yet)")
                 .register(registry);
         Gauge.builder("insight.job.last.failure", failures, m -> seconds(m.get(job)))
-                .tag("job", job).baseUnit("seconds")
+                .tag("worker", job).baseUnit("seconds")
                 .description("Unix time of the job's last failed round on this instance (0: none)")
                 .register(registry);
     }

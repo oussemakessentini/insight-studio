@@ -90,7 +90,7 @@ class OpsIntegrationTest extends PostgresIntegrationTest {
         String metrics = mvc.perform(get("/actuator/prometheus")).andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
         assertThat(metrics).contains("http_server_requests_seconds_bucket")
-                .contains("insight_job_last_success_seconds{application=\"insight-api\",job=\"ops_test\"}")
+                .contains("insight_job_last_success_seconds{application=\"insight-api\",worker=\"ops_test\"}")
                 .contains("hikaricp_connections_active")
                 .contains("jvm_memory_used_bytes");
     }
