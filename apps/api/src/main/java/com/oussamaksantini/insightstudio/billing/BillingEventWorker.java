@@ -46,6 +46,25 @@ import org.springframework.transaction.support.TransactionTemplate;
 public class BillingEventWorker {
 
     private static final Logger log = LoggerFactory.getLogger(BillingEventWorker.class);
+    private static final String JOB = "billing_events";
+
+    private com.oussamaksantini.insightstudio.ops.JobHeartbeats heartbeats;
+
+    /** Reports each round to the ops metrics (optional: absent in workers built by tests). */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setHeartbeats(com.oussamaksantini.insightstudio.ops.JobHeartbeats heartbeats) {
+        this.heartbeats = heartbeats;
+    }
+
+    private void beat(boolean ok) {
+        if (heartbeats != null) {
+            if (ok) {
+                heartbeats.succeeded(JOB);
+            } else {
+                heartbeats.failed(JOB);
+            }
+        }
+    }
     private static final int MAX_ERROR = 500;
 
     static final Set<String> HANDLED = Set.of("checkout.session.completed", "customer.subscription.created",
@@ -92,7 +111,9 @@ public class BillingEventWorker {
     void poll() {
         try {
             processDue();
+            beat(true);
         } catch (RuntimeException e) {
+            beat(false);
             log.warn("Billing event round failed: {}", e.getClass().getSimpleName());
         }
     }

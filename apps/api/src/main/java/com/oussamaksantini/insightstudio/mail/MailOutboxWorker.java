@@ -34,6 +34,25 @@ import org.springframework.stereotype.Component;
 public class MailOutboxWorker {
 
     private static final Logger log = LoggerFactory.getLogger(MailOutboxWorker.class);
+    private static final String JOB = "mail_outbox";
+
+    private com.oussamaksantini.insightstudio.ops.JobHeartbeats heartbeats;
+
+    /** Reports each round to the ops metrics (optional: absent in workers built by tests). */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setHeartbeats(com.oussamaksantini.insightstudio.ops.JobHeartbeats heartbeats) {
+        this.heartbeats = heartbeats;
+    }
+
+    private void beat(boolean ok) {
+        if (heartbeats != null) {
+            if (ok) {
+                heartbeats.succeeded(JOB);
+            } else {
+                heartbeats.failed(JOB);
+            }
+        }
+    }
     private static final int MAX_ERROR = 500;
     private static final int PURGE_EVERY = 100;
 
@@ -59,8 +78,10 @@ public class MailOutboxWorker {
             if (rounds.incrementAndGet() % PURGE_EVERY == 0) {
                 purge();
             }
+            beat(true);
         } catch (RuntimeException e) {
             // E.g. the database is briefly unavailable: the next round tries again.
+            beat(false);
             log.warn("Mail outbox round failed: {}", e.getClass().getSimpleName());
         }
     }

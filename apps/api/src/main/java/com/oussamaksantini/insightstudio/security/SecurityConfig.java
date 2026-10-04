@@ -65,6 +65,10 @@ class SecurityConfig {
                         // Error dispatches only render the error of a request that was already authorized.
                         .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/session", "/actuator/health").permitAll()
+                        // Probes and metrics: in production on the management port only, which is not
+                        // published (docs/operations.md); the web proxy never forwards /actuator.
+                        .requestMatchers(HttpMethod.GET, "/actuator/health/**", "/actuator/info", "/actuator/prometheus")
+                        .permitAll()
                         .requestMatchers(HttpMethod.POST, PUBLIC_POSTS).permitAll()
                         .requestMatchers(HttpMethod.POST, WEBHOOKS).permitAll()
                         .requestMatchers(HttpMethod.GET, DEMO_READABLE).access(signedInOrPublicDemo(demo))

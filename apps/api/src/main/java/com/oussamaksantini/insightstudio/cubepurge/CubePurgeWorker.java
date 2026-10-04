@@ -51,6 +51,25 @@ import org.springframework.stereotype.Component;
 public class CubePurgeWorker {
 
     private static final Logger log = LoggerFactory.getLogger(CubePurgeWorker.class);
+    private static final String JOB = "cube_purge";
+
+    private com.oussamaksantini.insightstudio.ops.JobHeartbeats heartbeats;
+
+    /** Reports each round to the ops metrics (optional: absent in workers built by tests). */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setHeartbeats(com.oussamaksantini.insightstudio.ops.JobHeartbeats heartbeats) {
+        this.heartbeats = heartbeats;
+    }
+
+    private void beat(boolean ok) {
+        if (heartbeats != null) {
+            if (ok) {
+                heartbeats.succeeded(JOB);
+            } else {
+                heartbeats.failed(JOB);
+            }
+        }
+    }
     private static final Duration PAUSE = Duration.ofMillis(500);
     private static final int MAX_ERROR = 500;
 
@@ -83,7 +102,9 @@ public class CubePurgeWorker {
     void poll() {
         try {
             processDue();
+            beat(true);
         } catch (RuntimeException e) {
+            beat(false);
             log.warn("Cube purge round failed: {}", e.getClass().getSimpleName());
         }
     }

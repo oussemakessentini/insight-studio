@@ -26,6 +26,25 @@ import org.springframework.stereotype.Component;
 public class BillingCancellationWorker {
 
     private static final Logger log = LoggerFactory.getLogger(BillingCancellationWorker.class);
+    private static final String JOB = "billing_cancellations";
+
+    private com.oussamaksantini.insightstudio.ops.JobHeartbeats heartbeats;
+
+    /** Reports each round to the ops metrics (optional: absent in workers built by tests). */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setHeartbeats(com.oussamaksantini.insightstudio.ops.JobHeartbeats heartbeats) {
+        this.heartbeats = heartbeats;
+    }
+
+    private void beat(boolean ok) {
+        if (heartbeats != null) {
+            if (ok) {
+                heartbeats.succeeded(JOB);
+            } else {
+                heartbeats.failed(JOB);
+            }
+        }
+    }
 
     private final NamedParameterJdbcTemplate jdbc;
     private final BillingProvider provider;
@@ -48,7 +67,9 @@ public class BillingCancellationWorker {
     void poll() {
         try {
             processDue();
+            beat(true);
         } catch (RuntimeException e) {
+            beat(false);
             log.warn("Billing cancellation round failed: {}", e.getClass().getSimpleName());
         }
     }

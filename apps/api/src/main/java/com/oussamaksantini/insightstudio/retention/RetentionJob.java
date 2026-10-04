@@ -35,6 +35,25 @@ import org.springframework.transaction.support.TransactionTemplate;
 public class RetentionJob {
 
     private static final Logger log = LoggerFactory.getLogger(RetentionJob.class);
+    private static final String JOB = "retention";
+
+    private com.oussamaksantini.insightstudio.ops.JobHeartbeats heartbeats;
+
+    /** Reports each round to the ops metrics (optional: absent in workers built by tests). */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setHeartbeats(com.oussamaksantini.insightstudio.ops.JobHeartbeats heartbeats) {
+        this.heartbeats = heartbeats;
+    }
+
+    private void beat(boolean ok) {
+        if (heartbeats != null) {
+            if (ok) {
+                heartbeats.succeeded(JOB);
+            } else {
+                heartbeats.failed(JOB);
+            }
+        }
+    }
 
     /**
      * {@code insight.retention.*}.
@@ -72,7 +91,9 @@ public class RetentionJob {
     void scheduled() {
         try {
             purge();
+            beat(true);
         } catch (RuntimeException e) {
+            beat(false);
             log.warn("Retention purge failed (retried tomorrow): {}", e.getClass().getSimpleName());
         }
     }
