@@ -57,7 +57,8 @@ function NewStore({ href, onCreated }: { href: (path: string) => string; onCreat
   const [name, setName] = useState('')
   const [city, setCity] = useState('')
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  // The caught error (not just its text), so a plan-limit refusal can link to the plans.
+  const [error, setError] = useState<unknown>(null)
   const [created, setCreated] = useState<CreatedStore | null>(null)
   const touched = useTouched<StoreField>()
 
@@ -83,7 +84,7 @@ function NewStore({ href, onCreated }: { href: (path: string) => string; onCreat
       // The store filter lists every store: include the new one.
       onCreated()
     } catch (err) {
-      setError(errorMessage(err))
+      setError(err)
     } finally {
       setBusy(false)
     }
@@ -92,7 +93,7 @@ function NewStore({ href, onCreated }: { href: (path: string) => string; onCreat
   return (
     <Panel title="Add a store" subtitle="The code identifies the store in CSV imports.">
       <form className="form-stack" onSubmit={(e) => void onSubmit(e)} noValidate>
-        {error && <FormError>{error}</FormError>}
+        {error != null && <FormError error={error}>{errorMessage(error)}</FormError>}
         {created && (
           <FormSuccess>
             Store {created.code} · {created.name} added.{' '}
@@ -157,7 +158,8 @@ function NewProduct({ currency, href }: { currency: string; href: (path: string)
   const [category, setCategory] = useState('')
   const [listPrice, setListPrice] = useState('')
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  // The caught error (not just its text), so a plan-limit refusal can link to the plans.
+  const [error, setError] = useState<unknown>(null)
   const [created, setCreated] = useState<ProductInfo | null>(null)
   const [version, setVersion] = useState(0)
   const touched = useTouched<ProductField>()
@@ -189,7 +191,7 @@ function NewProduct({ currency, href }: { currency: string; href: (path: string)
       touched.reset()
       setVersion((v) => v + 1)
     } catch (err) {
-      setError(errorMessage(err))
+      setError(err)
     } finally {
       setBusy(false)
     }
@@ -198,7 +200,7 @@ function NewProduct({ currency, href }: { currency: string; href: (path: string)
   return (
     <Panel title="Add a product" subtitle="The SKU identifies the product in CSV imports.">
       <form className="form-stack" onSubmit={(e) => void onSubmit(e)} noValidate>
-        {error && <FormError>{error}</FormError>}
+        {error != null && <FormError error={error}>{errorMessage(error)}</FormError>}
         {created && (
           <FormSuccess>
             {created.sku} · {created.name} added at {formatCurrency(created.listPrice, currency)}.{' '}

@@ -44,7 +44,8 @@ export function ChartPage({ chartId, context, href }: PageProps & { chartId: num
   const requested = revisionParam(useSearch())
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [busy, setBusy] = useState<'duplicate' | 'delete' | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  // The caught error (not just its text), so a plan-limit refusal can link to the plans.
+  const [error, setError] = useState<unknown>(null)
   const chart = useApi(`chart|${chartId}`, (signal) => chartsApi.get(chartId, signal))
   const revisions = useApi(`chart-revisions|${chartId}`, (signal) => chartsApi.revisions(chartId, signal))
   const listHref = href('/charts')
@@ -77,7 +78,7 @@ export function ChartPage({ chartId, context, href }: PageProps & { chartId: num
       const copy = await chartsApi.duplicate(chartId)
       navigate(href(`/charts/${copy.id}`))
     } catch (err) {
-      setError(errorMessage(err))
+      setError(err)
       setBusy(null)
     }
   }
@@ -89,7 +90,7 @@ export function ChartPage({ chartId, context, href }: PageProps & { chartId: num
       await chartsApi.remove(chartId)
       navigate(listHref)
     } catch (err) {
-      setError(errorMessage(err))
+      setError(err)
       setConfirmingDelete(false)
       setBusy(null)
     }
@@ -145,7 +146,7 @@ export function ChartPage({ chartId, context, href }: PageProps & { chartId: num
       </PageHeader>
 
       {can.needsVerification && <VerifyToManageCharts />}
-      {error && <FormError>{error}</FormError>}
+      {error != null && <FormError error={error}>{errorMessage(error)}</FormError>}
       {confirmingDelete && current && (
         <div className="form-alert chart-delete-usage" role="status">
           <div>

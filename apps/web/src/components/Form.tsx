@@ -1,5 +1,6 @@
 import { useId, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes } from 'react'
 import { AlertIcon } from './Icons'
+import { SeePlansLink } from './SeePlans'
 
 interface FieldShellProps {
   label: string
@@ -97,11 +98,18 @@ export function SelectField({ label, value, onChange, hint, error, fieldClassNam
 }
 
 /** A server or request error for a whole form. */
-export function FormError({ children }: { children: ReactNode }) {
+/**
+ * An error above a form. Pass the caught `error` too and a plan-limit refusal gets its "See plans"
+ * link (contract §9).
+ */
+export function FormError({ children, error }: { children: ReactNode; error?: unknown }) {
   return (
     <div className="form-alert form-alert-error" role="alert">
       <AlertIcon />
-      <div>{children}</div>
+      <div>
+        {children}
+        {error !== undefined && <SeePlansLink error={error} />}
+      </div>
     </div>
   )
 }

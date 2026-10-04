@@ -7,6 +7,7 @@ import { currentMembership, useSession } from '../lib/session'
 import {
   BoxIcon,
   BuildingIcon,
+  CardIcon,
   ChartIcon,
   CloseIcon,
   DashboardIcon,
@@ -37,6 +38,7 @@ export type Section =
   | 'catalog'
   | 'business'
   | 'activity'
+  | 'billing'
   | 'account'
   | 'newBusiness'
 
@@ -64,6 +66,7 @@ const SETTINGS_NAV: NavItem[] = [
   { label: 'Catalog', icon: BoxIcon, section: 'catalog', allowed: (a) => a.canManageCatalog },
   { label: 'Business', icon: BuildingIcon, section: 'business', allowed: (a) => isAdminOrOwner(a) },
   { label: 'Activity', icon: HistoryIcon, section: 'activity', allowed: (a) => isAdminOrOwner(a) },
+  { label: 'Billing', icon: CardIcon, section: 'billing', allowed: (a) => isAdminOrOwner(a) },
 ]
 
 interface SidebarProps {

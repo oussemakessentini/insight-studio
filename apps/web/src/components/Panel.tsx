@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { AlertIcon } from './Icons'
+import { SeePlansLink } from './SeePlans'
 
 interface PanelProps {
   title: string
@@ -59,11 +60,15 @@ export function AsyncContent<T>({
   )
 }
 
-export function ErrorState({ message, onRetry }: { message: string; onRetry?: () => void }) {
+/** `error`: the caught error, so a plan-limit refusal gets its "See plans" link (contract §9). */
+export function ErrorState({ message, onRetry, error }: { message: string; onRetry?: () => void; error?: unknown }) {
   return (
     <div className="state state-error" role="alert">
       <AlertIcon />
-      <p>{message}</p>
+      <p>
+        {message}
+        {error !== undefined && <SeePlansLink error={error} />}
+      </p>
       {onRetry && (
         <button type="button" className="button button-secondary" onClick={onRetry}>
           Try again

@@ -1,5 +1,6 @@
 import { useState, type FormEvent, type ReactNode } from 'react'
 import { ApiError } from '../../api/client'
+import { planLimitOf } from '../../lib/billing'
 import { DASHBOARD_NAME_MAX, dashboardNameError } from '../../lib/dashboards'
 import { errorMessage } from '../../lib/validation'
 import { Dialog } from '../Dialog'
@@ -41,7 +42,8 @@ function NameForm({
   const [touched, setTouched] = useState(false)
   const [busy, setBusy] = useState(false)
   const [nameTaken, setNameTaken] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  // The caught error (not just its text), so a plan-limit refusal can link to the plans.
+  const [error, setError] = useState<unknown>(null)
   const nameError = dashboardNameError(name)
 
   const submit = async (event: FormEvent) => {
@@ -55,8 +57,8 @@ function NameForm({
     try {
       await onSubmit(name.trim())
     } catch (err) {
-      if (err instanceof ApiError && err.status === 409 && /name/i.test(err.message)) setNameTaken(err.message)
-      else setError(errorMessage(err))
+      if (err instanceof ApiError && err.status === 409 && !planLimitOf(err) && /name/i.test(err.message)) setNameTaken(err.message)
+      else setError(err)
     } finally {
       setBusy(false)
       onBusyChange(false)
@@ -66,7 +68,7 @@ function NameForm({
   return (
     <form className="form-stack" onSubmit={(e) => void submit(e)} noValidate>
       {note && <p className="dialog-text">{note}</p>}
-      {error && <FormError>{error}</FormError>}
+      {error != null && <FormError error={error}>{errorMessage(error)}</FormError>}
       <TextField
         label="Name"
         value={name}

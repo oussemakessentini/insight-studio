@@ -17,7 +17,8 @@ import '../styles/reports.css'
 import '../styles/dashboards.css'
 import type { PageProps } from './types'
 
-type Notice = { kind: 'success' | 'error'; message: string; href?: string } | null
+/** `error`: the caught error of an error notice, so a plan-limit refusal links to the plans. */
+type Notice = { kind: 'success' | 'error'; message: string; href?: string; error?: unknown } | null
 
 /** Every custom dashboard of the business; owners and admins also create and manage them here. */
 export function DashboardsPage({ context, href }: PageProps) {
@@ -70,7 +71,7 @@ export function DashboardsPage({ context, href }: PageProps) {
                 )}
               </FormSuccess>
             )}
-            {notice?.kind === 'error' && <FormError>{notice.message}</FormError>}
+            {notice?.kind === 'error' && <FormError error={notice.error}>{notice.message}</FormError>}
           </div>
           <AsyncContent {...list} skeleton={<SkeletonRows rows={4} />}>
             {(dashboards) =>
@@ -91,7 +92,7 @@ export function DashboardsPage({ context, href }: PageProps) {
                     setNotice({ kind: 'success', message: `Deleted “${dashboard.name}”.` })
                     setVersion((v) => v + 1)
                   }}
-                  onError={(message) => setNotice({ kind: 'error', message })}
+                  onError={(error) => setNotice({ kind: 'error', message: errorMessage(error), error })}
                 />
               )
             }
@@ -183,7 +184,7 @@ interface DashboardTableProps {
   onRename: (dashboard: DashboardSummary) => void
   onDuplicated: (copy: { id: number; name: string }) => void
   onDeleted: (dashboard: DashboardSummary) => void
-  onError: (message: string) => void
+  onError: (error: unknown) => void
 }
 
 function DashboardTable({ dashboards, canManage, timeZone, href, onRename, onDuplicated, onDeleted, onError }: DashboardTableProps) {
@@ -195,7 +196,7 @@ function DashboardTable({ dashboards, canManage, timeZone, href, onRename, onDup
     try {
       await action()
     } catch (err) {
-      onError(errorMessage(err))
+      onError(err)
     } finally {
       setBusy(null)
     }
