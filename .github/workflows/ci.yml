@@ -110,14 +110,16 @@ jobs:
           docker buildx build --load -t "insight-cube:${GITHUB_SHA}" services/analytics
       - name: Smoke test the API image starts and answers its probes
         run: bash scripts/ci/image-smoke.sh "${GITHUB_SHA}"
-      - name: Scan images for known vulnerabilities (fixable HIGH/CRITICAL fail the build)
+      - name: Scan the API and web images (fixable HIGH/CRITICAL fail the build)
         run: |
           set -euo pipefail
-          for image in api web cube; do
-            docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:0.67.2 image \
-              --scanners vuln --ignore-unfixed --severity HIGH,CRITICAL --exit-code 1 --no-progress \
-              "insight-${image}:${GITHUB_SHA}"
+          for image in api web; do
+            docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:0.67.2 image               --scanners vuln --ignore-unfixed --severity HIGH,CRITICAL --exit-code 1 --no-progress --timeout 20m               "insight-${image}:${GITHUB_SHA}"
           done
+      - name: Scan the Cube image (report only; Cube is optional and off by default, docs/security-review.md)
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:0.67.2 image             --scanners vuln --ignore-unfixed --severity HIGH,CRITICAL --exit-code 0 --no-progress --timeout 30m             --format table "insight-cube:${GITHUB_SHA}" | tee cube-scan.txt
+          { echo "### Cube image (upstream cubejs/cube) findings"; grep -E "^Total:" cube-scan.txt; } >> "$GITHUB_STEP_SUMMARY"
 
   config:
     name: Configuration checks
