@@ -54,6 +54,9 @@ Browser ──> Vite dev server (:5173) ──/api proxy──> Spring Boot API 
 | `dashboards`, `dashboard_revisions`, `dashboard_chart_refs` | Custom dashboards (V15): name, current revision, every saved layout (JSONB desktop and mobile grids of x, y, w, h), and the charts the current layout uses, with composite foreign keys so a dashboard can only reference its own business's charts |
 | `audit_events` | Audit history (V16): settings, membership, import, chart and dashboard changes per business, written in the same transaction; allowlisted details, never secrets |
 | `cube_purge_requests` | Cube purges queued by business deletions (V16), processed by a worker on any API instance |
+| `business_subscriptions` | Each business's subscription (V18) as last fetched from the payment provider: plan, status, period end, cancel at period end; no row = Free |
+| `billing_events`, `billing_cancellations` | Verified webhook events, recorded once by event id with references only (never the payload) and processed by a worker; provider subscriptions to cancel after a business deletion, retried until done |
+| `fake_billing_objects` | State of the local fake payment provider (development and tests only) |
 
 Revenue is always `SUM(quantity × sale_items.unit_price)`, so historical revenue is unaffected when
 a product's list price changes. Days, weeks and months are bucketed in the business's time zone.
@@ -109,6 +112,8 @@ a product's list price changes. Days, weeks and months are bucketed in the busin
 | `/settings/members` | Members, roles and invitations (owners and admins) |
 | `/settings/business` | Business name, time zone (with a preview of how history is re-bucketed) and currency (only while the business holds no amounts); export and delete the business. Owners change, admins read |
 | `/settings/activity` | Audit history of settings, members, imports, charts and dashboards, filterable (owners and admins) |
+| `/settings/billing` | Plan and subscription status, usage against the plan's limits, Free vs Pro, and for owners "Upgrade to Pro" (checkout) and "Manage billing" (portal); admins read |
+| `/billing/fake/checkout/{id}`, `/billing/fake/portal/{id}` | The local fake provider's test checkout and portal (no real payments; fake provider only) |
 | `/invite` | Accept an invitation from its emailed link |
 | `/account` | Profile, password change, sign-out, download your data and delete your account |
 
@@ -265,6 +270,8 @@ curl walkthrough: [docs/auth.md](docs/auth.md).
 | `GET /api/businesses/{id}/audit` | Audit history, newest first, by category (owners and admins) |
 | `GET /api/businesses/{id}/export`, `/deletion-preview`; `DELETE /api/businesses/{id}` | ZIP export of every business file; what deletion removes; delete with password and typed name (OWNER) |
 | `GET /api/account/export`, `/deletion-preview`; `DELETE /api/account` | Your data as JSON; delete your account with password and typed email (refused while you are a business's only owner) |
+| `GET /api/businesses/{id}/billing`; `POST …/billing/checkout`, `…/billing/portal`; `GET /api/billing/plans` | Plan, status and usage (owners and admins); checkout and billing-portal links (owners only) |
+| `POST /api/billing/webhooks/{provider}` | Payment-provider webhooks (public, signature-verified, recorded once, processed by a worker) |
 | `/api/businesses/{id}/members[/{userId}]` | List, change role, remove (owners and admins, with last-owner protection) |
 | `/api/businesses/{id}/invitations[/{invitationId}]` | Invite by email, list open invitations, revoke (owners and admins) |
 | `POST /api/invitations/preview`, `/accept` | Show an invitation from its token; accept it (signed in, invited address only) |
@@ -347,7 +354,9 @@ Details: [docs/stores.md](docs/stores.md), [docs/reports.md](docs/reports.md),
 [docs/chart-builder-api.md](docs/chart-builder-api.md), [docs/frontend-charts.md](docs/frontend-charts.md),
 [docs/dashboards-contract.md](docs/dashboards-contract.md), [docs/dashboards-api.md](docs/dashboards-api.md), [docs/frontend-dashboards.md](docs/frontend-dashboards.md),
 [docs/account-management-contract.md](docs/account-management-contract.md), [docs/account-management-api.md](docs/account-management-api.md),
-[docs/frontend-account-management.md](docs/frontend-account-management.md), [docs/data-retention.md](docs/data-retention.md).
+[docs/frontend-account-management.md](docs/frontend-account-management.md), [docs/data-retention.md](docs/data-retention.md),
+[docs/billing-contract.md](docs/billing-contract.md), [docs/billing-api.md](docs/billing-api.md) (including Stripe test-mode setup),
+[docs/frontend-billing.md](docs/frontend-billing.md).
 
 **CSV import** (OWNER or ADMIN with a verified email; viewers get `403`, signed-out visitors `401`),
 for `{kind}` = `sales`, `stores` or `products`: `GET /api/imports/templates/{kind}.csv`;
@@ -453,6 +462,14 @@ running. They do not touch your local database. The tests cover:
   last-owner protection, reauthentication and its rate limit); retention purges; Cube purges retried
   until they succeed across failures, restarts and crashed workers; and, with Cube, no Cube Store
   table holding a deleted business's rows after the purge
+- billing: the permission matrix of every billing endpoint and the public demo; each plan limit on
+  every creation path, also under concurrent requests (exactly the free slots succeed), and after a
+  downgrade (data kept, editable, exportable, deletable; creation and invitation acceptance refused);
+  declined checkout, past-due grace and unpaid; webhook signatures (wrong secret, tampered body, stale
+  timestamp, missing header, `v0` only), duplicate deliveries processed once, out-of-order events
+  re-read from the provider; a provider outage retried across worker instances; cancellation at period
+  end and immediately; business deletion cancelling the subscription, also when a checkout is paid
+  after the deletion; and the Stripe adapter's requests against a local stub (no network)
 - saved reports: every endpoint against OWNER, ADMIN, VIEWER, unverified and signed-out callers;
   another business's definitions and stores answer 404 everywhere, including exports; every
   relative preset at month, quarter, year and leap-year boundaries and in time zones a day apart
@@ -484,6 +501,9 @@ running. They do not touch your local database. The tests cover:
   of every attempt, for owners and admins of their own business (never the public demo)
 - Private Cube analytics behind the API, scoped to the member's business
 - Reports computed by Cube (selectable; SQL kept during the migration) with verified freshness
+- Subscription billing per business: configurable Free and Pro plans with race-free limits, a local
+  fake provider and a Stripe integration in test mode, durable webhook processing and cancellation on
+  business deletion
 
 **Later:**
 
@@ -496,5 +516,5 @@ running. They do not touch your local database. The tests cover:
 - Per-store breakdown on the product page
 - Product mix over time
 - PDF export of the dashboard view
-- Billing
+- Run the Stripe test-mode flows against a real Stripe sandbox (setup in [docs/billing-api.md](docs/billing-api.md))
 - Deployment (containerized API + static web build)
