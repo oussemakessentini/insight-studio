@@ -25,6 +25,7 @@ import java.util.Optional;
 import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -120,7 +121,13 @@ public class BusinessService {
         String newName = name == null ? null : checkName(name);
         String newZone = timeZone == null ? null : checkTimeZone(timeZone);
         String newCurrency = currency == null ? null : checkCurrency(currency);
-        queries.lockBusiness(businessId);
+        if (newCurrency != null) {
+            // Waits for every transaction writing products or sales of this business (V17) and keeps
+            // new ones out until this one ends, so the check below cannot race with them. Taken before
+            // the row lock, which is only FOR NO KEY UPDATE: writers hold the row's KEY SHARE.
+            queries.lockMoney(businessId);
+        }
+        queries.lockBusinessSettings(businessId);
         BusinessRow business = queries.find(businessId).orElseThrow(() -> ApiException.notFound(NOT_FOUND));
         newName = newName == null ? business.name() : newName;
         newZone = newZone == null ? business.timeZone() : newZone;
@@ -128,7 +135,15 @@ public class BusinessService {
         if (!newCurrency.equals(business.currency()) && queries.hasMonetaryData(businessId)) {
             throw ApiException.conflict(currencyLocked(business.currency()));
         }
-        queries.updateBusiness(businessId, newName, newZone, newCurrency);
+        try {
+            queries.updateBusiness(businessId, newName, newZone, newCurrency);
+        } catch (DataAccessException e) {
+            // The database's own guard (V17), should anything slip past the check above.
+            if (BusinessQueries.isCurrencyLocked(e)) {
+                throw ApiException.conflict(currencyLocked(business.currency()));
+            }
+            throw e;
+        }
         long actor = caller.userId();
         if (!newName.equals(business.name())) {
             audit.record(businessId, actor, AuditAction.BUSINESS_RENAMED, businessId, Map.of("from", business.name(), "to", newName));

@@ -122,6 +122,36 @@ class BusinessQueries {
                 Map.of("id", businessId, "name", name, "timeZone", timeZone, "currency", currency));
     }
 
+    /** The advisory lock key class shared with the V17 triggers (products, sales, currency guard). */
+    private static final int MONEY_LOCK = 1296387705;
+
+    /**
+     * Takes the business's money lock exclusively until the transaction ends (V17): waits for every
+     * transaction writing products or sales of the business and makes new ones wait.
+     */
+    void lockMoney(long businessId) {
+        jdbc.queryForList("SELECT pg_advisory_xact_lock(:lock, (:id % 2147483647)::integer)",
+                Map.of("lock", MONEY_LOCK, "id", businessId));
+    }
+
+    /**
+     * Serialises settings changes of one business. FOR NO KEY UPDATE, not FOR UPDATE: it must not wait
+     * for (or block) the KEY SHARE that inserts referencing the business take.
+     */
+    void lockBusinessSettings(long businessId) {
+        jdbc.queryForObject("SELECT id FROM businesses WHERE id = :id FOR NO KEY UPDATE", Map.of("id", businessId), Long.class);
+    }
+
+    /** Whether {@code e} is the V17 trigger refusing a currency change. */
+    static boolean isCurrencyLocked(Throwable e) {
+        for (Throwable t = e; t != null; t = t.getCause()) {
+            if (t instanceof java.sql.SQLException sql && "IS001".equals(sql.getSQLState())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /** Serialises membership changes of one business until the transaction ends (last-owner checks). */
     void lockBusiness(long businessId) {
         jdbc.queryForObject("SELECT id FROM businesses WHERE id = :id FOR UPDATE", Map.of("id", businessId), Long.class);
