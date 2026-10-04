@@ -99,5 +99,8 @@ changed fields, name rules).
 
 - Member events carry only roles (contract §2), so "changed the role of a member" doesn't name the
   member unless the server adds `displayName`/`name`/`email` to `details` (used when present).
-- After deleting a business no separate "deleted" notice is shown on the next business.
+- After deleting a business, the next page (the other business's overview, or "Create a business")
+  shows a dismissible confirmation banner (`.flash-banner`, `role="status"`): "“{deleted}” was deleted.
+  You're now working in “{name}”." (`lib/flash.ts`, in memory: it disappears on dismiss, on the next
+  page change or on a full reload).
 - The settings pages were checked against the contract shapes, not a running backend.

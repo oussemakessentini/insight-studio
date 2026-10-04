@@ -2,6 +2,7 @@ import { useCallback, useEffect, useEffectEvent, useLayoutEffect, useState, type
 import { ApiError, dashboardApi, setBusinessScope, UNAUTHORIZED_EVENT } from './api/client'
 import type { BusinessAccess, DashboardContext } from './api/types'
 import { DemoBanner } from './components/DemoBanner'
+import { FlashBanner } from './components/FlashBanner'
 import { ResendVerification, VerifyEmailBanner } from './components/VerifyEmailBanner'
 import { LogoMark, MenuIcon } from './components/Icons'
 import { Link } from './components/Link'
@@ -415,6 +416,7 @@ function Shell({ active, hrefs, access, businessName, demo = false, children }: 
         </div>
         {demo && <DemoBanner />}
         {!demo && <VerifyEmailBanner />}
+        <FlashBanner />
         <main className="content">{children}</main>
       </div>
     </div>
@@ -438,6 +440,7 @@ function OnboardingFrame({ children }: { children: ReactNode }) {
         </div>
       </header>
       <VerifyEmailBanner />
+      <FlashBanner />
       <main className="onboarding-main">{children}</main>
     </div>
   )

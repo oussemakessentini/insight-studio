@@ -23,7 +23,8 @@ import {
 } from '../lib/accountSettings'
 import { plural } from '../lib/audit'
 import { formatBucketTick, formatCurrency, formatDateTimeLong, formatNumber } from '../lib/format'
-import { useLoadedSession } from '../lib/session'
+import { businessDeletedMessage, flash } from '../lib/flash'
+import { readStoredBusinessId, resolveBusinessId, useLoadedSession } from '../lib/session'
 import { canManageBusiness } from '../lib/settingsAccess'
 import { errorMessage } from '../lib/validation'
 import '../styles/accounts.css'
@@ -485,8 +486,14 @@ function DeleteBusinessForm({ onClose, onBusyChange }: { onClose: () => void; on
     setError(null)
     try {
       await businessSettingsApi.delete(business.id, password, confirmName.trim())
-      // The membership is gone: move to another business, or to creating one when none is left.
-      await reload((session) => (session.memberships.length > 0 ? '/' : '/businesses/new'))
+      // The membership is gone: move to another business, or to creating one when none is left, and
+      // say so there.
+      await reload((session) => {
+        const nextId = resolveBusinessId(session, readStoredBusinessId())
+        const next = session.memberships.find((m) => m.businessId === nextId)
+        flash(businessDeletedMessage(business.name, next?.name ?? null))
+        return next ? '/' : '/businesses/new'
+      })
     } catch (err) {
       setError(errorMessage(err))
       setBusy(false)

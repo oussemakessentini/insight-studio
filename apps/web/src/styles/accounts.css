@@ -685,6 +685,30 @@ a.sidebar-button-ghost:hover {
   }
 }
 
+/* ---------- One-shot confirmation (lib/flash) ---------------------------- */
+
+.flash-banner {
+  background: var(--good-bg);
+  border-bottom-color: var(--border);
+  color: var(--good-text);
+}
+
+.flash-banner svg {
+  color: currentColor;
+}
+
+.flash-banner p {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.flash-dismiss {
+  flex: none;
+  color: inherit;
+}
+
 /* ---------- Email verification ------------------------------------------ */
 
 .verify-banner {
