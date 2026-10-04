@@ -79,8 +79,8 @@ class BillingWebhookIntegrationTest extends BillingIntegrationTest {
         assertThat(postWebhook("fake", body, StripeSignature.header(body, now, "whsec_wrong"))).isEqualTo(400);
         byte[] tampered = new String(body, StandardCharsets.UTF_8).replace("sub_x", "sub_y").getBytes(StandardCharsets.UTF_8);
         assertThat(postWebhook("fake", tampered, StripeSignature.header(body, now, secret))).isEqualTo(400);
-        assertThat(postWebhook("fake", body, StripeSignature.header(body, now - 301, secret))).isEqualTo(400);
-        assertThat(postWebhook("fake", body, StripeSignature.header(body, now + 301, secret))).isEqualTo(400);
+        assertThat(postWebhook("fake", body, StripeSignature.header(body, now - 400, secret))).isEqualTo(400);
+        assertThat(postWebhook("fake", body, StripeSignature.header(body, now + 400, secret))).isEqualTo(400);
         assertThat(postWebhook("fake", body, null)).isEqualTo(400);
         String v1 = StripeSignature.header(body, now, secret).split(",v1=")[1];
         assertThat(postWebhook("fake", body, "t=" + now + ",v0=" + v1)).isEqualTo(400);

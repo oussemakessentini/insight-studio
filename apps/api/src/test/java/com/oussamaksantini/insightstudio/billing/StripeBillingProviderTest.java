@@ -256,4 +256,17 @@ class StripeBillingProviderTest {
                 .isInstanceOf(InvalidWebhookException.class);
         assertThat(requests).isEmpty();
     }
+
+    @Test
+    void theSignatureToleranceIsFiveMinutesEitherWay() {
+        byte[] body = "{}".getBytes(StandardCharsets.UTF_8);
+        long now = CLOCK.instant().getEpochSecond();
+        for (long t : new long[] {now - 300, now, now + 300}) {
+            StripeSignature.verify(body, StripeSignature.header(body, t, WEBHOOK_SECRET), WEBHOOK_SECRET, CLOCK);
+        }
+        for (long t : new long[] {now - 301, now + 301}) {
+            assertThatThrownBy(() -> StripeSignature.verify(body, StripeSignature.header(body, t, WEBHOOK_SECRET),
+                    WEBHOOK_SECRET, CLOCK)).isInstanceOf(InvalidWebhookException.class);
+        }
+    }
 }
