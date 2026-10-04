@@ -32,7 +32,9 @@ public enum AuditAction {
     DASHBOARD_CREATED("dashboard.created", "dashboard", "name", "revision", "widgetCount"),
     DASHBOARD_UPDATED("dashboard.updated", "dashboard", "name", "revision", "widgetCount", "renamedFrom"),
     DASHBOARD_DUPLICATED("dashboard.duplicated", "dashboard", "name", "revision", "widgetCount"),
-    DASHBOARD_DELETED("dashboard.deleted", "dashboard", "name", "revision", "widgetCount");
+    DASHBOARD_DELETED("dashboard.deleted", "dashboard", "name", "revision", "widgetCount"),
+    /** The business's effective plan changed (written by the billing worker: no actor). */
+    BILLING_PLAN_CHANGED("billing.plan_changed", "business", "from", "to", "status");
 
     /** The categories of {@code GET /api/businesses/{id}/audit?category=}. */
     public enum Category {
@@ -40,7 +42,8 @@ public enum AuditAction {
         MEMBER(List.of("member.", "invitation.")),
         IMPORT(List.of("import.")),
         CHART(List.of("chart.")),
-        DASHBOARD(List.of("dashboard."));
+        DASHBOARD(List.of("dashboard.")),
+        BILLING(List.of("billing."));
 
         private final List<String> prefixes;
 

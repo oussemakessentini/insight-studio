@@ -50,6 +50,9 @@ class SecurityConfig {
         "/api/invitations/preview", "/api/auth/verify-email",
     };
 
+    /** Payment provider webhooks: authenticated by their signature, so neither a session nor CSRF applies. */
+    static final String WEBHOOKS = "/api/billing/webhooks/**";
+
     @Bean
     SecurityFilterChain securityFilterChain(
             HttpSecurity http,
@@ -63,10 +66,12 @@ class SecurityConfig {
                         .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/session", "/actuator/health").permitAll()
                         .requestMatchers(HttpMethod.POST, PUBLIC_POSTS).permitAll()
+                        .requestMatchers(HttpMethod.POST, WEBHOOKS).permitAll()
                         .requestMatchers(HttpMethod.GET, DEMO_READABLE).access(signedInOrPublicDemo(demo))
                         .anyRequest().authenticated())
                 .csrf(csrf -> csrf
                         .csrfTokenRepository(csrfTokens)
+                        .ignoringRequestMatchers(WEBHOOKS)
                         .csrfTokenRequestHandler(new HeaderCsrfTokenRequestHandler()))
                 .securityContext(context -> context.securityContextRepository(contextRepository))
                 .sessionManagement(session -> session

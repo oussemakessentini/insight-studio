@@ -187,8 +187,9 @@ class AuditIntegrationTest extends PostgresIntegrationTest {
         exerciseEveryAction();
 
         Set<String> all = new TreeSet<>(jdbc.queryForList("SELECT DISTINCT action FROM audit_events", String.class));
-        assertThat(all).containsExactlyInAnyOrderElementsOf(
-                Arrays.stream(AuditAction.values()).map(AuditAction::action).collect(Collectors.toSet()));
+        // billing.plan_changed is written by the billing worker: BillingWebhookIntegrationTest covers it.
+        assertThat(all).containsExactlyInAnyOrderElementsOf(Arrays.stream(AuditAction.values())
+                .filter(a -> a != AuditAction.BILLING_PLAN_CHANGED).map(AuditAction::action).collect(Collectors.toSet()));
 
         List<Map<String, Object>> events = events(business);
         assertThat(events).extracting(e -> e.get("action")).containsExactly(

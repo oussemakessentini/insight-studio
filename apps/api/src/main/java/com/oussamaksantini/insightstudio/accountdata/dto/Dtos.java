@@ -1,5 +1,6 @@
 package com.oussamaksantini.insightstudio.accountdata.dto;
 
+import com.oussamaksantini.insightstudio.billing.BillingDeletion.SubscriptionToCancel;
 import com.oussamaksantini.insightstudio.tenancy.Role;
 import java.util.List;
 import java.util.Map;
@@ -24,8 +25,14 @@ public final class Dtos {
     public record OtherMember(long userId, String displayName, Role role) {
     }
 
-    /** {@code GET /api/businesses/{id}/deletion-preview}. */
-    public record BusinessDeletionPreview(BusinessRef business, Map<String, Long> counts, List<OtherMember> otherMembers) {
+    /**
+     * {@code GET /api/businesses/{id}/deletion-preview}.
+     *
+     * @param subscription the paid subscription the deletion cancels ({@code plan}, {@code status},
+     *     {@code message}), or {@code null} when there is none to cancel
+     */
+    public record BusinessDeletionPreview(BusinessRef business, Map<String, Long> counts, List<OtherMember> otherMembers,
+            SubscriptionToCancel subscription) {
     }
 
     public record AccountRef(String email, String displayName) {
