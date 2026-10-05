@@ -17,6 +17,10 @@ release notes. Deployment steps: [deployment.md](deployment.md).
 
 ## Unresolved (open)
 
+Status at `v1.0.0-rc.1`: **all three remain open.** A check closes only by its "To close" steps; a green run
+or a test that passes on its rerun does not close it. The release checklist ([release-checklist.md](release-checklist.md))
+keeps the affected features off until then.
+
 ### 1. Intermittent Cube failures — open
 
 **What:** `CubeReportsIntegrationTest` (15 tests) has failed intermittently, each time because Cube itself
