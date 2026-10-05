@@ -141,8 +141,9 @@
   gap: 6px;
 }
 
-/* Narrow cards: the pie stacks above its legend, KPI tiles fill the width. */
-@container (max-width: 520px) {
+/* Narrow cards: the pie stacks above its legend (side by side, a half-width card left the legend's
+   labels too little room and category names broke mid-word), KPI tiles fill the width. */
+@container (max-width: 640px) {
   .chart-pie {
     grid-template-columns: minmax(0, 1fr);
     gap: 12px;
