@@ -7,7 +7,7 @@ It needs no secrets and pushes nothing (no images, no deployments). Read-only `c
 |---|---|---|
 | Backend tests (a) | `scripts/ci/backend-tests.sh a`: accounts, businesses, billing, security, operations, mail, retention, tenancy, audit | 30 min |
 | Backend tests (b) | `scripts/ci/backend-tests.sh b`: everything else except the Cube stack | 30 min |
-| Cube checks | `node --test services/analytics/test/`, then `scripts/ci/backend-tests.sh cube` (Cube, Cube Store and PostgreSQL containers) | 45 min |
+| Cube checks | `node --test "services/analytics/test/*.test.js"`, then `scripts/ci/backend-tests.sh cube` (Cube, Cube Store and PostgreSQL containers) | 45 min |
 | Web checks | `npm ci`, lint, `tsc -b`, node tests, build | 15 min |
 | Container images | build the three images, `scripts/ci/image-smoke.sh` (the API image starts in production mode, answers its probes on the management port only, logs JSON), Trivy scan (fixable HIGH/CRITICAL fail) | 30 min |
 | Configuration checks | `docker compose config` of both compose files, `promtool check rules`, `shellcheck` | 10 min |
@@ -34,3 +34,10 @@ The workflow has not run on GitHub (nothing was pushed). Its parts were run loca
 HIGH/CRITICAL), and the backend through `scripts/ci/backend-tests.sh`: shard a 201 tests and shard b 420 tests,
 all passing; the whole suite (`all`, 637 tests) passed except one intermittent Cube test; the Cube shard passed
 15/15 + 1/1 with one test recorded as flaky after its rerun.
+
+The first run on GitHub (`00afc3f`) failed before any test started, for two reasons that local runs on Windows
+could not show: `apps/api/mvnw` and the scripts were committed without the executable bit (`exec ./mvnw` exited
+126 in both backend shards), and Node 24's `node --test <directory>/` loads the directory as one test file
+instead of searching it (the Cube job exited 1). Executables are now committed as mode `100755`
+(`git ls-files -s` shows it; on Windows set it with `git update-index --chmod=+x <file>`), and the Cube unit
+tests are named by a quoted glob.

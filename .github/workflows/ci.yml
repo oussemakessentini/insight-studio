@@ -53,7 +53,7 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
       - name: Cube security unit tests
-        run: node --test services/analytics/test/
+        run: node --test "services/analytics/test/*.test.js"
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
