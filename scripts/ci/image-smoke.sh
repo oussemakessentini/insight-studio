@@ -47,4 +47,9 @@ if grep -qv '^{' <<< "$lines"; then
   exit 1
 fi
 grep -q '"@timestamp"' <<< "$lines" || { echo "FAIL: not ECS" >&2; exit 1; }
-echo "PASS: image ${tag} starts, answers its probes on 8081 only, and logs JSON"
+# Release defaults (docs/release-checklist.md): SQL reports, billing off.
+grep -q 'Reports are computed by the sql engine' <<< "$logs" || { echo "FAIL: reports are not on the SQL engine" >&2; exit 1; }
+webhook=$(docker exec "smoke-api-$$" curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' \
+  -d '{}' http://127.0.0.1:8080/api/billing/webhooks/stripe || true)
+[[ "$webhook" == "404" ]] || { echo "FAIL: billing is not off (webhook endpoint answered ${webhook})" >&2; exit 1; }
+echo "PASS: image ${tag} starts, answers its probes on 8081 only, logs JSON, reports with SQL, billing off"
