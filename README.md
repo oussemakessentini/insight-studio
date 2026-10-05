@@ -1,36 +1,90 @@
 # Insight Studio
 
-A retail analytics dashboard for a multi-store clothing business. A Spring Boot API computes
-sales metrics from PostgreSQL; a React app presents revenue trends, store performance, top
-products and recent sales, plus a searchable product catalogue with per-product sales history,
-a sales register with receipt-level detail, per-store performance and monthly/category reports
-with CSV and PDF export, and saved report definitions that can be re-run with fixed or rolling
-dates. Date-range and store filters apply across every page.
+Retail analytics for multi-store businesses: revenue, orders, stores, products and sales from PostgreSQL,
+with reports and PDF/CSV exports, a chart builder, drag-and-drop dashboards, CSV imports, team accounts with
+roles, an audit history, and subscription billing (off by default). A Spring Boot API serves a React app.
 
-People sign up, create businesses and invite others by email as owners, admins or viewers.
-Every request sees only the business its signed-in user is a member of; owners and admins can set
-up stores and products and import stores, products and historical sales from CSV files, with any
-column names (mapped on screen). An optional, private Cube semantic
-layer serves the same figures behind the API, and a read-only public demo can be switched on.
+**Status: release candidate `v1.0.0-rc.1`.** Two release checks are still open (below); they keep Cube and
+billing switched off by default. What to verify before any release: [docs/release-checklist.md](docs/release-checklist.md).
 
-The bundled demo business, **Fieldstone Apparel Co.**, and all of its stores, products and sales
-are fictional.
+The bundled demo business, **Fieldstone Apparel Co.**, and all of its stores, products, sales and people
+(including "Alex Morgan" in the screenshots) are fictional.
+
+## Screenshots
+
+| | |
+|---|---|
+| ![Sales overview: revenue, orders, average order value and units against the previous period, revenue over time, sales by store](docs/screenshots/overview.png) | ![A custom dashboard of saved charts: KPI tiles, weekly revenue, revenue by store, units by category and revenue mix](docs/screenshots/dashboard.png) |
+| **Overview** — metrics against the previous period, revenue over time, sales by store | **Custom dashboard** — saved charts on a desktop/mobile grid, each loading on its own |
+| ![The chart builder editing a bar chart of revenue by store, with a live preview](docs/screenshots/chart-builder.png) | ![The monthly report for March to August with totals and month-over-month change](docs/screenshots/reports.png) |
+| **Chart builder** — catalogue-driven settings with a preview on real data | **Reports** — monthly and category reports with CSV and PDF export |
+| ![The import page: choose a type, upload a CSV, and the import history](docs/screenshots/imports.png) | |
+| **Imports** — CSV imports of sales, stores and products with a history | |
+
+Captured from the production web build on the demo data set (`docs/screenshots/`).
+
+## Features
+
+- **Analytics**: overview, products, sales register with receipts, stores, monthly and category reports
+  (CSV, PDF), saved reports with fixed or rolling dates, all filtered by store and dates in the business's
+  time zone.
+- **Charts and dashboards**: a chart builder (KPI, line, bar, pie, table; revisions), dashboards of saved
+  charts with drag-and-drop and keyboard editing, separate desktop and mobile layouts, conflict detection.
+- **Data in**: catalog editing and CSV imports of sales, stores and products with column mapping, validation
+  before writing, error files and a history.
+- **Teams**: accounts with email verification, businesses with owner/admin/viewer roles, invitations,
+  password recovery, an audit history, account and business export and deletion with a retention policy.
+- **Billing** (off by default): Free and Pro plans with race-free limits, Stripe test-mode integration and a
+  local fake provider, durable webhooks, cancellation on business deletion.
+- **Operations**: health probes, structured logs, Prometheus metrics and alerts, backups with a verified
+  restore drill, reproducible images, a production compose stack, CI, load tests.
+- **Public demo** (optional, `demo` profile): signed-out visitors read the demo business's overview, products,
+  sales, stores and reports; charts, dashboards and every change need an account.
+
+## Limitations (release candidate)
+
+- **Cube is off.** The optional Cube engine has intermittent failures in its integration tests and 84 fixable
+  vulnerabilities in its upstream image; reports use SQL (`REPORTS_ENGINE=sql`). Open release check.
+- **Billing is off** in production (`BILLING_PROVIDER=none`). The Stripe integration is tested against a local
+  stub and a fake provider, never a real Stripe sandbox. Open release check.
+- **Single region, single database.** Every API instance shares one PostgreSQL; no read replicas, no
+  point-in-time recovery out of the box (daily backups, documented).
+- **Load baseline from one laptop**: 0 % errors at ~47 requests/s, but PostgreSQL CPU is the bottleneck and
+  webhook ingestion missed its p95 target by 7 ms; re-measure on production hardware.
+- Not built yet: email address changes, scheduled report emails, forecasting, multi-currency conversion.
+- Nothing in this repository provisions infrastructure or deploys; see [docs/deployment.md](docs/deployment.md).
 
 ## Architecture
 
 ```
 apps/
-  api/        Spring Boot 4 (Java 21) REST API — JPA, Flyway, PostgreSQL
-  web/        React 19 + TypeScript + Vite dashboard
-infra/        Docker Compose for local PostgreSQL 16
+  api/        Spring Boot 4 (Java 21) REST API — JPA, Flyway, PostgreSQL; Dockerfile
+  web/        React 19 + TypeScript + Vite; nginx Dockerfile for production
 services/
-  analytics/  Cube semantic layer (optional; reconciled against the API)
-docs/         feature notes: accounts, stores, reports, CSV import, analytics
+  analytics/  Cube semantic layer (optional, off by default); Dockerfile
+infra/        compose.yaml (local PostgreSQL, Mailpit, optional Cube), compose.prod.yaml (production),
+              monitoring/ (Prometheus, alerts), backup/ (backup and restore drill)
+scripts/ci/   test shards and the image smoke test (used by .github/workflows/ci.yml)
+tests/load/   k6 load tests on a throwaway stack
+docs/         feature, API, operations and release documentation
 ```
+
+Local development:
 
 ```
 Browser ──> Vite dev server (:5173) ──/api proxy──> Spring Boot API (:8080) ──> PostgreSQL (:5435)
 ```
+
+Production (`infra/compose.prod.yaml`; only `web` is published):
+
+```
+Browser ─HTTPS─> your TLS proxy ──> web (nginx :8080) ──/api──> api (:8080) ──> db (PostgreSQL)
+                                                        api management :8081 <── Prometheus (optional)
+                                                        api ──> Cube + Cube Store (optional, off)
+```
+
+Every API instance is stateless: sessions, rate limits, chart run slots and every background queue (emails,
+webhook events, cancellations, Cube purges) live in PostgreSQL, so instances can be added behind the proxy.
 
 **Data model** (Flyway migrations in `apps/api/src/main/resources/db/migration`):
 
@@ -57,6 +111,8 @@ Browser ──> Vite dev server (:5173) ──/api proxy──> Spring Boot API 
 | `business_subscriptions` | Each business's subscription (V18) as last fetched from the payment provider: plan, status, period end, cancel at period end; no row = Free |
 | `billing_events`, `billing_cancellations` | Verified webhook events, recorded once by event id with references only (never the payload) and processed by a worker; provider subscriptions to cancel after a business deletion, retried until done |
 | `fake_billing_objects` | State of the local fake payment provider (development and tests only) |
+| `billing_operations`, `billing_subscription_leases` | Provider calls recorded with their idempotency key before they are made, and expiries of checkout sessions (V19); one worker per subscription while its state is fetched |
+| `chart_run_slots` | Chart runs in progress per business, shared by every API instance (V20) |
 
 Revenue is always `SUM(quantity × sale_items.unit_price)`, so historical revenue is unaffected when
 a product's list price changes. Days, weeks and months are bucketed in the business's time zone.
@@ -136,7 +192,8 @@ quantity. The schema records no customer, payment or discount data, so none is s
 
 ## Local setup (Windows Command Prompt)
 
-Run each block in its own Command Prompt window, starting from the repository root.
+Run each block in its own Command Prompt window, starting from the repository root. On macOS or Linux the
+same steps work with `cp` instead of `copy` and `./mvnw` instead of `.\mvnw.cmd`.
 
 **1. PostgreSQL** (first time: create `infra\.env` and set your own `POSTGRES_PASSWORD`)
 
@@ -202,6 +259,20 @@ For deployments (the `prod` profile, HTTPS, reverse proxies, SMTP) see
 
 ## Production and operations
 
+Production-like start on one Docker host (images built locally; see [docs/deployment.md](docs/deployment.md)
+for registries, upgrades and rollback):
+
+```bash
+tag=$(git rev-parse --short=12 HEAD)
+docker build -t insight-api:$tag apps/api && docker build -t insight-web:$tag apps/web
+cp infra/.env.prod.example infra/.env.prod      # set API_IMAGE/WEB_IMAGE=…:$tag, passwords, WEB_BASE_URL, SMTP
+docker compose -f infra/compose.prod.yaml --env-file infra/.env.prod up -d
+```
+
+The app is then served on `WEB_PUBLISH` (default `127.0.0.1:8090`) for your HTTPS proxy. Defaults keep
+**Cube off** (`REPORTS_ENGINE=sql`), **billing off** (`BILLING_PROVIDER=none`) and **no public demo** (add
+`SPRING_PROFILES=prod,demo` to show the read-only demo business).
+
 Container images (`apps/api/Dockerfile`, `apps/web/Dockerfile`, `services/analytics/Dockerfile`; pinned base
 images, reproducible builds) and a production compose stack (`infra/compose.prod.yaml`: only the web
 container is published; PostgreSQL, the API and its management port stay internal; optional Cube and
@@ -216,6 +287,7 @@ Prometheus profiles).
 | CI (GitHub Actions) and how the suites are split | [docs/ci.md](docs/ci.md) |
 | Dependency and image security review | [docs/security-review.md](docs/security-review.md) |
 | What must pass before a release, and what is still open | [docs/release-checks.md](docs/release-checks.md) |
+| Release checklist: base release, public demo, paid SaaS activation | [docs/release-checklist.md](docs/release-checklist.md) |
 
 Open release checks: intermittent Cube failures (SQL stays the report engine) and the billing flows on a real
 Stripe sandbox (billing stays off in production).
