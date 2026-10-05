@@ -3,6 +3,10 @@
 `.github/workflows/ci.yml` runs on pushes to `main`, `integration/**` and `feature/**` and on pull requests.
 It needs no secrets and pushes nothing (no images, no deployments). Read-only `contents` permission.
 
+The dependency review step on pull requests needs the repository's **Dependency graph** enabled
+(Settings → Advanced Security / Code security → Dependency graph); without it the job fails with
+"Dependency review is not supported on this repository".
+
 | Job | What | Time budget |
 |---|---|---|
 | Backend tests (a) | `scripts/ci/backend-tests.sh a`: accounts, businesses, billing, security, operations, mail, retention, tenancy, audit | 30 min |
